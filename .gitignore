@@ -1,0 +1,9 @@
+bin/
+obj/
+.vs/
+*.user
+
+# 本地诊断材料，不公开（含屏幕截图）
+probe/
+verify/
+ISSUE-DRAFT.md

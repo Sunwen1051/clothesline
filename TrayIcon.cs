@@ -1,0 +1,162 @@
+using System.Runtime.InteropServices;
+
+namespace Clothesline;
+
+/// <summary>手写 Shell_NotifyIcon 托盘图标，零 NuGet 依赖。图标在代码里逐像素画（绳子 + 木夹）。</summary>
+internal sealed class TrayIcon : IDisposable
+{
+    private const uint NIM_ADD = 0, NIM_DELETE = 2;
+    private const uint NIF_MESSAGE = 1, NIF_ICON = 2, NIF_TIP = 4;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct NOTIFYICONDATA
+    {
+        public int cbSize;
+        public IntPtr hWnd;
+        public uint uID;
+        public uint uFlags;
+        public uint uCallbackMessage;
+        public IntPtr hIcon;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string szTip;
+        public uint dwState;
+        public uint dwStateMask;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string szInfo;
+        public uint uVersion;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string szInfoTitle;
+        public uint dwInfoFlags;
+        public Guid guidItem;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BITMAPINFOHEADER
+    {
+        public int biSize, biWidth, biHeight;
+        public short biPlanes, biBitCount;
+        public int biCompression, biSizeImage;
+        public int biXPelsPerMeter, biYPelsPerMeter;
+        public int biClrUsed, biClrImportant;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BITMAPINFO
+    {
+        public BITMAPINFOHEADER bmiHeader;
+        public uint bmiColors;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ICONINFO
+    {
+        public int fIcon;
+        public int xHotspot, yHotspot;
+        public IntPtr hbmMask, hbmColor;
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool Shell_NotifyIcon(uint message, ref NOTIFYICONDATA data);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateDIBSection(IntPtr hdc, ref BITMAPINFO bmi, uint usage, out IntPtr bits, IntPtr hSection, uint offset);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateBitmap(int width, int height, int planes, int bitsPerPixel, byte[]? data);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteObject(IntPtr obj);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr CreateIconIndirect(ref ICONINFO icon);
+
+    [DllImport("user32.dll")]
+    private static extern bool DestroyIcon(IntPtr hIcon);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr LoadIcon(IntPtr hInstance, IntPtr lpIconName);
+
+    private NOTIFYICONDATA _nid;
+    private bool _added;
+    private readonly IntPtr _hIcon;
+
+    public TrayIcon(IntPtr hwnd, uint callbackMessage, string tooltip)
+    {
+        _hIcon = CreatePegHIcon();
+        _nid = new NOTIFYICONDATA
+        {
+            cbSize = Marshal.SizeOf<NOTIFYICONDATA>(),
+            hWnd = hwnd,
+            uID = 0x1,
+            uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP,
+            uCallbackMessage = callbackMessage,
+            hIcon = _hIcon,
+            szTip = tooltip,
+        };
+        _added = Shell_NotifyIcon(NIM_ADD, ref _nid);
+        if (!_added) Logger.Log("tray icon add FAILED");
+    }
+
+    /// <summary>逐像素画一枚 32x32 图标：一道弧形绳 + 一只木夹。</summary>
+    private static IntPtr CreatePegHIcon()
+    {
+        try
+        {
+            const int S = 32;
+            var px = new byte[S * S * 4];
+
+            void Dot(int x, int y, byte b, byte g, byte r)
+            {
+                if (x < 0 || y < 0 || x >= S || y >= S) return;
+                int i = (y * S + x) * 4;
+                px[i] = b; px[i + 1] = g; px[i + 2] = r; px[i + 3] = 255;
+            }
+
+            for (int x = 1; x <= 30; x++)
+            {
+                int y = 21 + (int)Math.Round(3.0 * Math.Sin(Math.PI * (x - 1) / 29.0));
+                Dot(x, y, 79, 106, 138);      // 绳：#8A6A4F (BGRA)
+                Dot(x, y + 1, 79, 106, 138);
+            }
+            for (int y = 9; y <= 22; y++)
+            {
+                for (int x = 14; x <= 18; x++)
+                {
+                    bool edge = x == 14 || x == 18 || y == 9 || y == 22;
+                    if (edge) Dot(x, y, 40, 90, 138);       // 夹子描边
+                    else Dot(x, y, 78, 143, 201);           // 夹子木色 #C98F4E
+                }
+            }
+
+            var bmi = new BITMAPINFO();
+            bmi.bmiHeader.biSize = Marshal.SizeOf<BITMAPINFOHEADER>();
+            bmi.bmiHeader.biWidth = S;
+            bmi.bmiHeader.biHeight = -S; // top-down
+            bmi.bmiHeader.biPlanes = 1;
+            bmi.bmiHeader.biBitCount = 32;
+            bmi.bmiHeader.biCompression = 0; // BI_RGB
+
+            IntPtr bits;
+            IntPtr hbmColor = CreateDIBSection(IntPtr.Zero, ref bmi, 0, out bits, IntPtr.Zero, 0);
+            if (hbmColor == IntPtr.Zero) return FallbackIcon();
+            Marshal.Copy(px, 0, bits, px.Length);
+
+            IntPtr hbmMask = CreateBitmap(S, S, 1, 1, new byte[S * S / 8]);
+            var info = new ICONINFO { fIcon = 1, xHotspot = 0, yHotspot = 0, hbmMask = hbmMask, hbmColor = hbmColor };
+            IntPtr hIcon = CreateIconIndirect(ref info);
+            if (hbmColor != IntPtr.Zero) DeleteObject(hbmColor);
+            if (hbmMask != IntPtr.Zero) DeleteObject(hbmMask);
+            return hIcon != IntPtr.Zero ? hIcon : FallbackIcon();
+        }
+        catch
+        {
+            return FallbackIcon();
+        }
+    }
+
+    private static IntPtr FallbackIcon() => LoadIcon(IntPtr.Zero, new IntPtr(32512)); // IDI_APPLICATION
+
+    public void Dispose()
+    {
+        if (_added) Shell_NotifyIcon(NIM_DELETE, ref _nid);
+        _added = false;
+        if (_hIcon != IntPtr.Zero) DestroyIcon(_hIcon);
+    }
+}
