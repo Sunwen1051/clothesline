@@ -10,7 +10,7 @@
     <AssemblyName>Clothesline</AssemblyName>
     <Version>0.1.0</Version>
     <Product>Clothesline</Product>
-    <Description>把每张截图"晾"在屏幕顶部的绳子上（Windows 版，灵感来自 macOS 的 tendedero）</Description>
+    <Description>A screenshot clothesline for Windows: every capture hangs on a line at the top of your screen. Inspired by tendedero.</Description>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 

@@ -1,5 +1,7 @@
 # Clothesline
 
+English | [简体中文](README.zh-CN.md)
+
 A screenshot clothesline for Windows. Every new screenshot gets pegged to a line at the top of your screen; hover the very top edge and the line slides down, move away and it retracts.
 
 ![Clothesline](docs/demo.png)
@@ -38,7 +40,6 @@ Identical content within 6 seconds is deduplicated (one `Win+Shift+S` typically 
 
 - Primary screen only; screenshots taken anywhere hang on the primary screen's line.
 - While a fullscreen game or presentation is in the foreground, new captures don't auto-peek (they are still pegged; use the hotkey or the top edge).
-- The UI strings are currently Chinese (a small tool built for personal use — PRs welcome).
 - The top hotzone is 3 px tall: precise, but it can be blocked by other always-on-top windows covering the screen edge (use the hotkey then).
 
 ## Building

@@ -162,13 +162,13 @@ public partial class LineWindow : Window
         }
         else
         {
-            Logger.Log("hotkey register FAILED (Ctrl+Alt+T 和 Ctrl+Alt+L 均被占用)");
+            Logger.Log("hotkey register FAILED (both Ctrl+Alt+T and Ctrl+Alt+L are taken)");
         }
 
         _watcher = new FolderWatcher(App.ScreenshotsDir);
         _watcher.CaptureFound = path => Dispatcher.BeginInvoke(() => AddCapture(path, fromClipboard: false));
 
-        _tray = new TrayIcon(hwnd, WM_TRAYICON, "Clothesline — 截图晾衣绳");
+        _tray = new TrayIcon(hwnd, WM_TRAYICON, "Clothesline — screenshot clothesline");
         CreateHotZone();
         Logger.Log("ready");
     }
@@ -518,11 +518,11 @@ public partial class LineWindow : Window
         {
             var menu = new ContextMenu { Placement = PlacementMode.MousePoint, PlacementTarget = fe };
 
-            var open = new MenuItem { Header = "打开图片" };
+            var open = new MenuItem { Header = "Open image" };
             open.Click += (_, _) => OpenFile(item);
-            var folder = new MenuItem { Header = "打开所在文件夹" };
+            var folder = new MenuItem { Header = "Show in folder" };
             folder.Click += (_, _) => RevealFile(item.FilePath);
-            var remove = new MenuItem { Header = "取下来" };
+            var remove = new MenuItem { Header = "Take down" };
             remove.Click += (_, _) => _pegs.Remove(item);
 
             menu.Items.Add(open);
@@ -609,13 +609,13 @@ public partial class LineWindow : Window
             SetForegroundWindow(new WindowInteropHelper(this).Handle);
             var menu = new ContextMenu { Placement = PlacementMode.MousePoint, PlacementTarget = this };
 
-            var toggle = new MenuItem { Header = $"显示 / 收起 ({_hotkeyLabel})" };
+            var toggle = new MenuItem { Header = $"Show / hide ({_hotkeyLabel})" };
             toggle.Click += (_, _) => ToggleShow();
-            var shots = new MenuItem { Header = "打开系统截图文件夹" };
+            var shots = new MenuItem { Header = "Open screenshots folder" };
             shots.Click += (_, _) => OpenFolder(App.ScreenshotsDir);
-            var caps = new MenuItem { Header = "打开剪贴板截图文件夹" };
+            var caps = new MenuItem { Header = "Open clipboard captures folder" };
             caps.Click += (_, _) => OpenFolder(App.CapturesDir);
-            var exit = new MenuItem { Header = "退出 Clothesline" };
+            var exit = new MenuItem { Header = "Exit Clothesline" };
             exit.Click += (_, _) => ExitApp();
 
             menu.Items.Add(toggle);

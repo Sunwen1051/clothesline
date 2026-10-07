@@ -42,7 +42,7 @@
                                    Fill="#C98F4E" Stroke="#8A5A28" StrokeThickness="1"
                                    HorizontalAlignment="Center" VerticalAlignment="Top"
                                    Margin="0,6,0,0"/>
-                        <TextBlock Text="已复制" FontSize="11" Foreground="#4A4438"
+                        <TextBlock Text="Copied" FontSize="11" Foreground="#4A4438"
                                    HorizontalAlignment="Center" VerticalAlignment="Bottom"
                                    Margin="0,0,0,4">
                             <TextBlock.Style>
