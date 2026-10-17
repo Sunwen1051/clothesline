@@ -13,6 +13,7 @@
     <Compile Include="..\PegStore.cs" Link="PegStore.cs" />
     <Compile Include="..\HotkeyChord.cs" Link="HotkeyChord.cs" />
     <Compile Include="..\DropLocation.cs" Link="DropLocation.cs" />
+    <Compile Include="..\HistoryStore.cs" Link="HistoryStore.cs" />
   </ItemGroup>
 
 </Project>

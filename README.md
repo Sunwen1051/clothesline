@@ -10,7 +10,7 @@ Inspired by [tendedero](https://github.com/alejandrobujan/tendedero) (macOS, Swi
 
 ## Requirements
 
-- Windows 10 / 11
+- Windows 10 version 2004 (build 19041) or later, or Windows 11. OCR also needs a Windows OCR language pack.
 - [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) to run, or the .NET 10 SDK to build
 
 ## Usage
@@ -26,9 +26,9 @@ Inspired by [tendedero](https://github.com/alejandrobujan/tendedero) (macOS, Swi
 | Drag onto an Explorer folder or the desktop | Unpin. The file stays (Explorer copies or moves it) |
 | Drag onto the Recycle Bin | Move the file to the Recycle Bin and unpin |
 | Drag into a chat / editor | Drop the file; the peg stays on the line |
-| Right-click a photo | Open / reveal in folder / take down / take down and delete |
+| Right-click a photo | Open / reveal in folder / pin / OCR / take down / take down and delete |
 | More pegs than fit | Scroll horizontally with the wheel or trackpad |
-| Tray icon | Double-click toggles; right-click for the menu (hotkey, clipboard switch, settings, folders, exit) |
+| Tray icon | Double-click toggles; right-click for the menu (hotkey, clipboard switch, settings, history, open pins, folders, exit) |
 
 The UI is in Chinese. If a drop target is not recognized, the peg stays; use **取下** (take down) or **取下并删除文件** (take down and delete). Delete sends the file to the Recycle Bin.
 
@@ -41,9 +41,18 @@ Identical content within 6 seconds is deduplicated (one `Win+Shift+S` typically 
 
 ## Settings and restarts
 
-The tray item **设置…** edits capacity (default 20, range 1–200), the clipboard switch and size filter, the hotkey, and the watch-folder list.
+The tray item **设置…** edits capacity (default 20, range 1–200), history size (default 50, range 1–500), the clipboard switch and size filter, the hotkey, and the watch-folder list.
 
 `%LOCALAPPDATA%\Clothesline\settings.json` stores that. `%LOCALAPPDATA%\Clothesline\pegs.json` stores the pegs currently on the line (path and angle). They come back after a restart; pegs whose files are gone are dropped. A corrupt `settings.json` exits the app instead of overwriting the file. A corrupt `pegs.json` is renamed to `pegs.json.bad` and the line starts empty.
+
+## Pin, history, OCR
+
+- **贴图 (pin)** does not take the peg off the line. It is a separate always-on-top window: drag to move, use the corner or the wheel to scale, **锁定** to lock position, **穿透** for click-through. After click-through is on, turn it off or close the pin from the tray item **已打开的贴图**. Closing a pin does **not** delete the file, and the peg stays on the line.
+- **取下 (take down)** without deleting the file appends `%LOCALAPPDATA%\Clothesline\history.json`. The tray item **历史…** can hang it again or open another pin. Hanging it again removes that history row. The list drops the oldest past the cap, and drops rows whose files are gone.
+- **取下并删除文件** and a drop on the Recycle Bin do not enter history. A drop on a folder is recorded only when the original file is still there.
+- **识别文字** uses Windows.Media.Ocr and copies the text. If no language pack is installed, or recognition fails, the app shows a message and keeps running. A normal click still copies the image, not a pin.
+
+Pen, arrow, and mosaic annotation are not in this version.
 
 ## Known limitations
 
@@ -51,6 +60,8 @@ The tray item **设置…** edits capacity (default 20, range 1–200), the clip
 - While a fullscreen game or presentation is in the foreground, new captures don't auto-peek (they are still pegged; use the hotkey or the top edge).
 - The top hotzone is 3 px tall: precise, but it can be blocked by other always-on-top windows covering the screen edge (use the hotkey then).
 - Folder and Recycle Bin drops are recognized for Explorer. Other file managers may not report a target; use the context menu then.
+- OCR needs a Windows OCR language pack. A click-through pin is dismissed from the tray.
+- No long-screenshot stitching and no global Win+drag capture.
 
 ## Building
 

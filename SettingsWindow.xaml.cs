@@ -19,6 +19,7 @@ public partial class SettingsWindow : Window
         _chord = HotkeyChord.FromSettings(draft);
 
         MaxPegsBox.Text = draft.MaxPegs.ToString();
+        HistoryBox.Text = draft.HistoryLimit.ToString();
         ClipboardBox.IsChecked = draft.ClipboardWatchEnabled;
         MinWidthBox.Text = draft.ClipboardMinWidth.ToString();
         MinHeightBox.Text = draft.ClipboardMinHeight.ToString();
@@ -102,6 +103,11 @@ public partial class SettingsWindow : Window
             ErrorText.Text = $"最多挂件数须为 1 到 {AppSettings.MaxPegsLimit} 的整数。";
             return;
         }
+        if (!int.TryParse(HistoryBox.Text.Trim(), out int history) || history < 1 || history > AppSettings.HistoryLimitMax)
+        {
+            ErrorText.Text = $"历史条数须为 1 到 {AppSettings.HistoryLimitMax} 的整数。";
+            return;
+        }
         if (!int.TryParse(MinWidthBox.Text.Trim(), out int minWidth) || minWidth < 0)
         {
             ErrorText.Text = "最小宽度须为大于等于 0 的整数，0 表示不限制。";
@@ -119,6 +125,7 @@ public partial class SettingsWindow : Window
         }
 
         _settings.MaxPegs = max;
+        _settings.HistoryLimit = history;
         _settings.ClipboardWatchEnabled = ClipboardBox.IsChecked == true;
         _settings.ClipboardMinWidth = minWidth;
         _settings.ClipboardMinHeight = minHeight;

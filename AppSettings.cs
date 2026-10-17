@@ -10,8 +10,11 @@ public sealed class AppSettings
 {
     public const int DefaultMaxPegs = 20;
     public const int MaxPegsLimit = 200;
+    public const int DefaultHistoryLimit = 50;
+    public const int HistoryLimitMax = 500;
 
     public int MaxPegs { get; set; } = DefaultMaxPegs;
+    public int HistoryLimit { get; set; } = DefaultHistoryLimit;
     public bool ClipboardWatchEnabled { get; set; } = true;
     public int ClipboardMinWidth { get; set; }
     public int ClipboardMinHeight { get; set; }
@@ -61,6 +64,8 @@ public sealed class AppSettings
     {
         if (MaxPegs < 1) MaxPegs = 1;
         if (MaxPegs > MaxPegsLimit) MaxPegs = MaxPegsLimit;
+        if (HistoryLimit < 1) HistoryLimit = 1;
+        if (HistoryLimit > HistoryLimitMax) HistoryLimit = HistoryLimitMax;
         if (ClipboardMinWidth < 0) ClipboardMinWidth = 0;
         if (ClipboardMinHeight < 0) ClipboardMinHeight = 0;
         HotkeyKey = string.IsNullOrWhiteSpace(HotkeyKey) ? "T" : HotkeyKey.Trim();
@@ -91,6 +96,7 @@ public sealed class AppSettings
         var copy = new AppSettings
         {
             MaxPegs = MaxPegs,
+            HistoryLimit = HistoryLimit,
             ClipboardWatchEnabled = ClipboardWatchEnabled,
             ClipboardMinWidth = ClipboardMinWidth,
             ClipboardMinHeight = ClipboardMinHeight,
