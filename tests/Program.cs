@@ -23,6 +23,7 @@ try
 
     var created = AppSettings.Load(root, shots);
     Check(created.MaxPegs == AppSettings.DefaultMaxPegs, "default max pegs is 20");
+    Check(created.HistoryLimit == AppSettings.DefaultHistoryLimit, "default history limit is 50");
     Check(created.ClipboardWatchEnabled, "clipboard watch defaults on");
     Check(created.HotkeyCtrl && created.HotkeyAlt && created.HotkeyKey == "T", "default hotkey Ctrl+Alt+T");
     Check(created.WatchFolders.Count == 1 && created.WatchFolders[0] == Path.GetFullPath(shots), "default watch folder");
@@ -43,6 +44,7 @@ try
     Check(created.MaxPegs == AppSettings.MaxPegsLimit, "max pegs clamps to limit");
 
     created.MaxPegs = 12;
+    created.HistoryLimit = 30;
     created.ClipboardWatchEnabled = false;
     created.ClipboardMinWidth = 80;
     created.ClipboardMinHeight = 40;
@@ -54,6 +56,7 @@ try
 
     var loaded = AppSettings.Load(root, shots);
     Check(loaded.MaxPegs == 12, "max pegs roundtrip");
+    Check(loaded.HistoryLimit == 30, "history limit roundtrip");
     Check(!loaded.ClipboardWatchEnabled, "clipboard toggle roundtrip");
     Check(loaded.ClipboardMinWidth == 80 && loaded.ClipboardMinHeight == 40, "min size roundtrip");
     Check(loaded.HotkeyShift && loaded.HotkeyKey == "f5", "hotkey fields roundtrip");
@@ -85,6 +88,13 @@ try
     var emptied = AppSettings.Load(emptyDir, shots);
     Check(emptied.WatchFolders.Count == 0, "saved empty watch list stays empty");
     Check(emptied.MaxPegs == 7, "camelCase settings load");
+    Check(emptied.HistoryLimit == AppSettings.DefaultHistoryLimit, "missing historyLimit stays default");
+    var historyClamp = new AppSettings { HistoryLimit = 0 };
+    historyClamp.Normalize();
+    Check(historyClamp.HistoryLimit == 1, "history limit clamps up to 1");
+    historyClamp.HistoryLimit = 9000;
+    historyClamp.Normalize();
+    Check(historyClamp.HistoryLimit == AppSettings.HistoryLimitMax, "history limit clamps to max");
 
     File.WriteAllText(AppSettings.FilePath(emptyDir), "{");
     var corruptThrew = false;
@@ -155,6 +165,49 @@ try
     try { _ = DropLocation.FromShellUrl("file:///%zz"); }
     catch { threw = true; }
     Check(!threw, "bad file url does not throw");
+
+    var h1 = Path.Combine(root, "h1.png");
+    var h2 = Path.Combine(root, "h2.png");
+    var h3 = Path.Combine(root, "h3.png");
+    File.WriteAllText(h1, "a");
+    File.WriteAllText(h2, "b");
+    File.WriteAllText(h3, "c");
+    HistoryStore.Remember(root, h1, 1, 10);
+    HistoryStore.Remember(root, h2, 2, 10);
+    HistoryStore.Remember(root, h1, 1.5, 10);
+    var hist = HistoryStore.Load(root);
+    Check(hist.Count == 2 && hist[0].FilePath == h1 && hist[0].Angle == 1.5 && hist[1].FilePath == h2, "history newest first and dedupes path");
+    HistoryStore.Remember(root, h3, 3, 2);
+    hist = HistoryStore.Load(root);
+    Check(hist.Count == 2 && hist[0].FilePath == h3 && hist[1].FilePath == h1, "history cap drops oldest");
+    File.Delete(h3);
+    hist = HistoryStore.Load(root);
+    Check(hist.Count == 1 && hist[0].FilePath == h1, "history load drops missing file");
+    HistoryStore.Remember(root, Path.Combine(root, "no-such-history.png"), 0, 10);
+    hist = HistoryStore.Load(root);
+    Check(hist.Count == 1 && hist[0].FilePath == h1, "missing file is not recorded");
+    HistoryStore.Forget(root, h1);
+    Check(HistoryStore.Load(root).Count == 0, "history forget removes entry");
+    var limitThrew = false;
+    try { HistoryStore.Remember(root, h2, 0, 0); }
+    catch (ArgumentOutOfRangeException) { limitThrew = true; }
+    Check(limitThrew, "history rejects non-positive limit");
+    File.WriteAllText(HistoryStore.FilePath(root), "{");
+    var historyCorrupt = false;
+    try { HistoryStore.Load(root); }
+    catch (InvalidDataException) { historyCorrupt = true; }
+    Check(historyCorrupt, "corrupt history.json throws");
+    Check(File.ReadAllText(HistoryStore.FilePath(root)) == "{", "corrupt history.json is not overwritten by load");
+    File.WriteAllText(h2, "b");
+    HistoryStore.Remember(root, h2, 4, 10);
+    Check(File.Exists(HistoryStore.FilePath(root) + ".bad"), "remember quarantines corrupt history");
+    hist = HistoryStore.Load(root);
+    Check(hist.Count == 1 && hist[0].FilePath == h2 && hist[0].Angle == 4, "remember starts fresh after quarantine");
+    File.WriteAllText(h1, "a");
+    HistoryStore.Remember(root, h1, 1, 10);
+    HistoryStore.Trim(root, 1);
+    hist = HistoryStore.Load(root);
+    Check(hist.Count == 1 && hist[0].FilePath == h1, "history trim keeps newest");
 }
 finally
 {

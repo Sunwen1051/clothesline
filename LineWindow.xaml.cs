@@ -57,6 +57,9 @@ public partial class LineWindow : Window
     private bool _demo;
     private bool _hotkeyFellBack;
     private string _hotkeyLabel = "不可用";
+    private readonly List<PinWindow> _pins = new();
+    private HistoryWindow? _historyWindow;
+    private int _pinOffset;
 
     // 拖拽状态
     private Point? _pressPoint;
@@ -125,7 +128,7 @@ public partial class LineWindow : Window
     {
         var item = new PegItem("(demo)", bmp, _rng.NextDouble() * 10 - 5);
         _pegs.Add(item);
-        PegStore.TrimOldest(_pegs, _settings.MaxPegs);
+        TrimToCapacity();
     }
 
     private static BitmapSource SyntheticCapture(Color bg, string label)
@@ -265,7 +268,7 @@ public partial class LineWindow : Window
         }
     }
 
-    private void AddCapture(string path, bool fromClipboard)
+    private void AddCapture(string path, bool fromClipboard, bool ignoreDedup = false, double? angle = null)
     {
         try
         {
@@ -280,7 +283,7 @@ public partial class LineWindow : Window
             if (thumb == null) { Logger.Log("unreadable: " + path); return; }
 
             string hash = Hash(thumb);
-            if (hash == _lastHash && DateTime.UtcNow - _lastHashAt < DedupWindow)
+            if (!ignoreDedup && hash == _lastHash && DateTime.UtcNow - _lastHashAt < DedupWindow)
             {
                 Logger.Log("dedup skip: " + path);
                 return;
@@ -288,9 +291,9 @@ public partial class LineWindow : Window
             _lastHash = hash;
             _lastHashAt = DateTime.UtcNow;
 
-            var item = new PegItem(path, thumb, _rng.NextDouble() * 10 - 5);
+            var item = new PegItem(path, thumb, angle ?? (_rng.NextDouble() * 10 - 5));
             _pegs.Add(item);
-            PegStore.TrimOldest(_pegs, _settings.MaxPegs);
+            TrimToCapacity();
             Logger.Log($"pegged ({(fromClipboard ? "clipboard" : "file")}): {path}");
             SnapToNewest();
 
@@ -322,7 +325,7 @@ public partial class LineWindow : Window
                 _pegs.Add(new PegItem(row.FilePath, thumb, row.Angle));
                 loaded++;
             }
-            PegStore.TrimOldest(_pegs, _settings.MaxPegs);
+            TrimToCapacity();
             Logger.Log("restored pegs: " + loaded);
         }
         catch (Exception ex)
@@ -642,14 +645,20 @@ public partial class LineWindow : Window
             open.Click += (_, _) => OpenFile(item);
             var folder = new MenuItem { Header = "打开所在文件夹" };
             folder.Click += (_, _) => RevealFile(item.FilePath);
+            var pin = new MenuItem { Header = "贴图" };
+            pin.Click += (_, _) => PinFile(item.FilePath);
+            var ocr = new MenuItem { Header = "识别文字" };
+            ocr.Click += (_, _) => _ = RecognizeAsync(item.FilePath);
             var remove = new MenuItem { Header = "取下" };
             remove.Click += (_, _) => TakeDown(item, deleteFile: false);
-            // P1 扩展点：贴图 Pin、历史、OCR 从这里加菜单，不要塞进拖拽路径。
+            // 标注（画笔/箭头/马赛克）以后从这里加，不要塞进拖拽路径。
             var delete = new MenuItem { Header = "取下并删除文件" };
             delete.Click += (_, _) => TakeDown(item, deleteFile: true);
 
             menu.Items.Add(open);
             menu.Items.Add(folder);
+            menu.Items.Add(pin);
+            menu.Items.Add(ocr);
             menu.Items.Add(new Separator());
             menu.Items.Add(remove);
             menu.Items.Add(delete);
@@ -661,16 +670,122 @@ public partial class LineWindow : Window
     /// <summary>取下夹子。deleteFile 为真时把文件移进回收站；删除失败则夹子留在绳子上。</summary>
     private void TakeDown(PegItem item, bool deleteFile)
     {
-        if (deleteFile && File.Exists(item.FilePath))
+        if (deleteFile)
         {
-            if (!ShellDrop.TryRecycle(item.FilePath))
+            if (File.Exists(item.FilePath) && !ShellDrop.TryRecycle(item.FilePath))
             {
                 _tray?.ShowBalloon("无法删除", "文件仍在原处，夹子保留。");
                 return;
             }
+            try { HistoryStore.Forget(App.DataDir, item.FilePath); }
+            catch (Exception ex) { Logger.Log("history forget: " + ex.Message); }
+        }
+        else
+        {
+            RememberHistory(item);
         }
         _pegs.Remove(item);
         Logger.Log((deleteFile ? "taken down and deleted: " : "taken down: ") + item.FilePath);
+    }
+
+    /// <summary>超出容量时把最旧的夹子取下并记入历史（文件还在的才记）。</summary>
+    private void TrimToCapacity()
+    {
+        int max = Math.Max(1, _settings.MaxPegs);
+        while (_pegs.Count > max)
+        {
+            RememberHistory(_pegs[0]);
+            _pegs.RemoveAt(0);
+        }
+    }
+
+    private void RememberHistory(PegItem item)
+    {
+        if (_demo || item.FilePath == "(demo)") return;
+        try
+        {
+            HistoryStore.Remember(App.DataDir, item.FilePath, item.Angle, _settings.HistoryLimit);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("history: " + ex.Message);
+        }
+    }
+
+    /// <summary>贴图不取下夹子。关掉贴图窗口也不删文件。</summary>
+    private void PinFile(string path)
+    {
+        if (!File.Exists(path))
+        {
+            _tray?.ShowBalloon("无法贴图", "文件已经不在了。");
+            return;
+        }
+        var pin = new PinWindow(path, _pinOffset++);
+        pin.Notice += (title, text) => _tray?.ShowBalloon(title, text);
+        pin.Closed += (_, _) => _pins.Remove(pin);
+        _pins.Add(pin);
+        pin.Show();
+        Logger.Log("pinned: " + path);
+    }
+
+    private void HangFromHistory(HistoryEntry entry)
+    {
+        if (!File.Exists(entry.FilePath))
+        {
+            try { HistoryStore.Forget(App.DataDir, entry.FilePath); }
+            catch (Exception ex) { Logger.Log("history forget: " + ex.Message); }
+            _tray?.ShowBalloon("无法挂回", "文件已经不在了。");
+            return;
+        }
+        AddCapture(entry.FilePath, fromClipboard: false, ignoreDedup: true, angle: entry.Angle);
+        if (_pegs.Any(p => string.Equals(p.FilePath, entry.FilePath, StringComparison.OrdinalIgnoreCase)))
+        {
+            try { HistoryStore.Forget(App.DataDir, entry.FilePath); }
+            catch (Exception ex) { Logger.Log("history forget: " + ex.Message); }
+        }
+    }
+
+    private async Task RecognizeAsync(string path)
+    {
+        var outcome = await OcrText.ReadAsync(path);
+        if (!outcome.Available)
+        {
+            _tray?.ShowBalloon("无法识别", outcome.Error ?? "本机没有可用的 OCR。");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(outcome.Text))
+        {
+            _tray?.ShowBalloon("识别文字", "没有识别到文字。");
+            return;
+        }
+        try
+        {
+            _suppressClipboardUntil = DateTime.UtcNow.AddMilliseconds(700);
+            Clipboard.SetText(outcome.Text);
+            var preview = outcome.Text.Length > 40 ? outcome.Text.Substring(0, 40) + "…" : outcome.Text;
+            _tray?.ShowBalloon("已复制文字", preview.Replace("\r", " ").Replace("\n", " "));
+            Logger.Log("ocr copied: " + path);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("ocr copy: " + ex.Message);
+            _tray?.ShowBalloon("无法复制", ex.Message);
+        }
+    }
+
+    private void ShowHistory()
+    {
+        if (_historyWindow != null)
+        {
+            _historyWindow.Reload();
+            _historyWindow.Activate();
+            return;
+        }
+        _historyWindow = new HistoryWindow();
+        _historyWindow.Closed += (_, _) => _historyWindow = null;
+        _historyWindow.RehangRequested += HangFromHistory;
+        _historyWindow.PinRequested += entry => PinFile(entry.FilePath);
+        _historyWindow.Show();
     }
 
     private void Peg_MouseEnter(object sender, MouseEventArgs e)
@@ -769,7 +884,9 @@ public partial class LineWindow : Window
         next.Normalize();
         next.Save(App.DataDir);
         _settings = next;
-        PegStore.TrimOldest(_pegs, _settings.MaxPegs);
+        TrimToCapacity();
+        try { HistoryStore.Trim(App.DataDir, _settings.HistoryLimit); }
+        catch (Exception ex) { Logger.Log("history trim: " + ex.Message); }
         _watchers?.Replace(_settings.WatchFolders);
         SyncClipboardListener();
         ReregisterHotkey();
@@ -888,10 +1005,14 @@ public partial class LineWindow : Window
             };
             var settings = new MenuItem { Header = "设置…" };
             settings.Click += (_, _) => ShowSettings();
+            var history = new MenuItem { Header = "历史…" };
+            history.Click += (_, _) => ShowHistory();
 
             menu.Items.Add(toggle);
             menu.Items.Add(clip);
             menu.Items.Add(settings);
+            menu.Items.Add(history);
+            AddOpenPinItems(menu);
             menu.Items.Add(new Separator());
             AddWatchFolderItems(menu);
             var caps = new MenuItem { Header = "打开剪贴板目录" };
@@ -908,6 +1029,28 @@ public partial class LineWindow : Window
         {
             Logger.Log("traymenu: " + ex.Message);
         }
+    }
+
+    private void AddOpenPinItems(ContextMenu menu)
+    {
+        if (_pins.Count == 0) return;
+        var parent = new MenuItem { Header = "已打开的贴图" };
+        foreach (var pin in _pins.ToList())
+        {
+            var sub = new MenuItem { Header = pin.TitleText.Replace("_", "__") };
+            var through = new MenuItem { Header = pin.ClickThrough ? "关闭穿透" : "鼠标穿透" };
+            var target = pin;
+            through.Click += (_, _) => target.SetClickThrough(!target.ClickThrough);
+            var ocr = new MenuItem { Header = "识别文字" };
+            ocr.Click += (_, _) => target.Recognize();
+            var close = new MenuItem { Header = "关闭贴图" };
+            close.Click += (_, _) => target.Close();
+            sub.Items.Add(through);
+            sub.Items.Add(ocr);
+            sub.Items.Add(close);
+            parent.Items.Add(sub);
+        }
+        menu.Items.Add(parent);
     }
 
     private void AddWatchFolderItems(ContextMenu menu)
@@ -947,6 +1090,8 @@ public partial class LineWindow : Window
         try
         {
             _watchers?.Dispose();
+            foreach (var pin in _pins.ToList()) pin.Close();
+            _historyWindow?.Close();
             _tray?.Dispose();
             if (_src != null)
             {
