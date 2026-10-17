@@ -5,8 +5,9 @@ namespace Clothesline;
 /// <summary>手写 Shell_NotifyIcon 托盘图标，零 NuGet 依赖。图标在代码里逐像素画（绳子 + 木夹）。</summary>
 internal sealed class TrayIcon : IDisposable
 {
-    private const uint NIM_ADD = 0, NIM_DELETE = 2;
-    private const uint NIF_MESSAGE = 1, NIF_ICON = 2, NIF_TIP = 4;
+    private const uint NIM_ADD = 0, NIM_MODIFY = 1, NIM_DELETE = 2;
+    private const uint NIF_MESSAGE = 1, NIF_ICON = 2, NIF_TIP = 4, NIF_INFO = 0x10;
+    private const uint NIIF_INFO = 1;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct NOTIFYICONDATA
@@ -92,6 +93,28 @@ internal sealed class TrayIcon : IDisposable
         };
         _added = Shell_NotifyIcon(NIM_ADD, ref _nid);
         if (!_added) Logger.Log("tray icon add FAILED");
+    }
+
+    public void SetTip(string tooltip)
+    {
+        if (!_added) return;
+        _nid.szTip = tooltip.Length > 127 ? tooltip.Substring(0, 127) : tooltip;
+        _nid.uFlags = NIF_TIP;
+        Shell_NotifyIcon(NIM_MODIFY, ref _nid);
+        _nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+    }
+
+    public void ShowBalloon(string title, string text)
+    {
+        if (!_added) return;
+        _nid.uFlags = NIF_INFO;
+        _nid.szInfoTitle = title.Length > 63 ? title.Substring(0, 63) : title;
+        _nid.szInfo = text.Length > 255 ? text.Substring(0, 255) : text;
+        _nid.dwInfoFlags = NIIF_INFO;
+        Shell_NotifyIcon(NIM_MODIFY, ref _nid);
+        _nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+        _nid.szInfo = "";
+        _nid.szInfoTitle = "";
     }
 
     /// <summary>逐像素画一枚 32x32 图标：一道弧形绳 + 一只木夹。</summary>

@@ -142,6 +142,19 @@ try
     Check(HotkeyChord.TryVirtualKey("nope") == null, "unknown key rejected");
     Check(HotkeyChord.TryVirtualKey("Num3") == 0x63, "numpad virtual key");
     Check(new HotkeyChord(true, false, false, true, "space").Label == "Ctrl+Win+Space", "space label");
+
+    var folder = Path.Combine(root, "drop-folder");
+    Directory.CreateDirectory(folder);
+    var folderUrl = new Uri(folder).AbsoluteUri;
+    Check(DropLocation.FromShellUrl(folderUrl) == DropKind.Folder, "existing folder url");
+    Check(DropLocation.FromShellUrl("::{645FF040-5081-101B-9F08-00AA002F954E}") == DropKind.RecycleBin, "recycle clsid url");
+    Check(DropLocation.FromShellUrl("file:///C:/no/such/clothesline-drop") == DropKind.Other, "missing folder url is not a folder");
+    Check(DropLocation.FromShellUrl("") == DropKind.Other, "empty shell url");
+    Check(DropLocation.FromShellUrl("http://example.test") == DropKind.Other, "non-file shell url");
+    var threw = false;
+    try { _ = DropLocation.FromShellUrl("file:///%zz"); }
+    catch { threw = true; }
+    Check(!threw, "bad file url does not throw");
 }
 finally
 {

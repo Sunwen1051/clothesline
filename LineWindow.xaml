@@ -14,8 +14,16 @@
         <Path x:Name="Rope" Stroke="#8A6A4F" StrokeThickness="3.5"
               StrokeStartLineCap="Round" StrokeEndLineCap="Round"
               VerticalAlignment="Top"/>
-        <ItemsControl x:Name="Pegs" VerticalAlignment="Top" HorizontalAlignment="Right"
-                      Margin="0,0,18,0">
+        <ScrollViewer x:Name="PegScroll"
+                      HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Disabled"
+                      HorizontalContentAlignment="Right"
+                      VerticalAlignment="Stretch"
+                      Background="Transparent"
+                      Focusable="False"
+                      PreviewMouseWheel="PegScroll_PreviewMouseWheel">
+            <ItemsControl x:Name="Pegs" VerticalAlignment="Top" HorizontalAlignment="Left"
+                          Margin="12,0,18,0" Focusable="False">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
                     <StackPanel Orientation="Horizontal"/>
@@ -42,7 +50,7 @@
                                    Fill="#C98F4E" Stroke="#8A5A28" StrokeThickness="1"
                                    HorizontalAlignment="Center" VerticalAlignment="Top"
                                    Margin="0,6,0,0"/>
-                        <TextBlock Text="Copied" FontSize="11" Foreground="#4A4438"
+                        <TextBlock Text="已复制" FontSize="11" Foreground="#4A4438"
                                    HorizontalAlignment="Center" VerticalAlignment="Bottom"
                                    Margin="0,0,0,4">
                             <TextBlock.Style>
@@ -72,6 +80,7 @@
                     </Grid>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
-        </ItemsControl>
+            </ItemsControl>
+        </ScrollViewer>
     </Grid>
 </Window>
