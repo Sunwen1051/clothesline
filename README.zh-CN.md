@@ -11,6 +11,9 @@
 - Windows 10 / 11，需要 [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)（构建需 .NET 10 SDK）
 - `dotnet build -c Release` 或单文件发布：
   `dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true`
+- 不依赖界面的设置 / 夹子列表 / 热键回退，在任意系统上可以跑：
+  `dotnet run --project tests/Clothesline.LogicTests.csproj -c Release`
+- 窗口、托盘和热键注册需要在 Windows 上构建运行。非 Windows 上直接 `dotnet build` 会报 `NETSDK1100`；交叉编译可加 `-p:EnableWindowsTargeting=true`，产物仍只能在 Windows 上跑。
 
 ## 操作
 
@@ -18,27 +21,40 @@
 | --- | --- |
 | 鼠标碰到屏幕最顶边 | 晾衣绳滑下 |
 | 鼠标移开（或点空白绳子） | 收回 |
-| `Ctrl+Alt+T`，被占用则自动回退 `Ctrl+Alt+L` | 显示 / 收起 |
+| 热键（默认 `Ctrl+Alt+T`） | 显示 / 收起。冲突时按 `Ctrl+Alt+L`、`Ctrl+Alt+T` 回退（已经试过的跳过），托盘会提示 |
 | 新截图到达 | 绳子"瞄一眼"（滑下约 2.8 秒再收回） |
 | 单击照片 | 复制**原图**到剪贴板 |
 | 双击 | 用默认看图软件打开 |
-| 拖拽 | 以文件形式拖进聊天 / 编辑器 |
-| 右键照片 | 打开 / 打开所在文件夹 / 取下 |
-| 托盘图标 | 双击=显示/收起；右键=菜单（打开文件夹、退出） |
+| 拖到资源管理器文件夹或桌面 | 从绳子取下，文件保留（系统负责复制或移动） |
+| 拖到回收站 | 文件进回收站，并从绳子取下 |
+| 拖到聊天 / 编辑器 | 以文件形式拖入，夹子仍留在绳子上 |
+| 右键照片 | 打开图片 / 打开所在文件夹 / 取下 / 取下并删除文件 |
+| 夹子太多、超出屏幕宽度 | 滚轮或触控板横向滚动 |
+| 托盘图标 | 双击=显示/收起；右键=菜单（热键、剪贴板开关、设置、打开文件夹、退出） |
 
-## 截图来源（两条路都听）
+认不出拖拽落点时，绳子不会自己取下。用右键「取下」或「取下并删除文件」即可。删除会把文件移进回收站，可以还原。
 
-1. **文件夹监听**：`Win+PrintScreen` 落到 `图片\Screenshots`（跟随 OneDrive 重定向）。
-2. **剪贴板监听**：`Win+Shift+S` 的结果自动存 PNG 到 `%LOCALAPPDATA%\Clothesline\captures`（拖拽/双击需要真实文件）。
+## 截图来源
+
+1. **监视文件夹**：默认是 `图片\Screenshots`（`Win+PrintScreen` 的落点，跟随 OneDrive 重定向）。可以在设置里增删多个文件夹。
+2. **剪贴板监听**（可关）：`Win+Shift+S` 的结果存成 PNG，放到 `%LOCALAPPDATA%\Clothesline\captures`。可按最小宽高过滤，`0` 表示不限制。
 
 6 秒内同像素内容去重（一次 Win+Shift+S 会同时进剪贴板和自动保存，只挂一张）。
+
+## 设置与重启
+
+托盘菜单「设置…」可改：最多挂件数（默认 20，1–200）、剪贴板开关和最小尺寸、热键、监视文件夹。
+
+这些都写在 `%LOCALAPPDATA%\Clothesline\settings.json`。当前挂着的夹子（路径和角度）写在同目录的 `pegs.json`。重启后还在；文件已经删掉的夹子启动时去掉。`settings.json` 读不出来时程序直接退出，避免用默认值盖掉原文件。`pegs.json` 读不出来时改名为 `pegs.json.bad`，从空绳子继续。
+
+界面文案为中文。
 
 ## 已知限制
 
 - 只在主屏展示。
 - 全屏游戏 / 演示模式时新截图不自动弹出（仍会挂上，热键或顶边可唤出）。
-- 界面文案为英文。
 - 顶边热区 3px，比较精确；若被其他置顶窗口挡住顶边，用热键。
+- 拖到文件夹 / 回收站依赖资源管理器报告落点。第三方文件管理器可能认不出，这时用右键。
 
 ## 踩坑记录（给做类似东西的人）
 

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -24,15 +25,9 @@ public partial class LineWindow : Window
     private const int WM_LBUTTONDBLCLK = 0x0203;
     private const int WM_RBUTTONUP = 0x0205;
 
-    private const int GWL_EXSTYLE = -20;
-    private const int WS_EX_TOOLWINDOW = 0x00000080;
-    private const int WS_EX_NOACTIVATE = 0x08000000;
-
-    private const uint MOD_ALT = 0x1, MOD_CONTROL = 0x2;
     private const int HOTKEY_ID = 1;
 
     private const double WinH = 190;
-    private const int MaxPegs = 10;
     private static readonly TimeSpan DedupWindow = TimeSpan.FromSeconds(6);
     private static readonly TimeSpan PeekHold = TimeSpan.FromSeconds(2.8);
     private static readonly TimeSpan HideDelay = TimeSpan.FromMilliseconds(350);
@@ -42,8 +37,9 @@ public partial class LineWindow : Window
     private readonly DispatcherTimer _peekTimer;
     private readonly Random _rng = new();
 
+    private AppSettings _settings;
     private HwndSource? _src;
-    private FolderWatcher? _watcher;
+    private FolderWatchSet? _watchers;
     private TrayIcon? _tray;
     private Window? _hotZone;
 
@@ -55,6 +51,11 @@ public partial class LineWindow : Window
 
     private bool _shown;
     private bool _mouseInside;
+    private bool _clipboardListening;
+    private bool _suspendPersist;
+    private bool _pegStoreBroken;
+    private bool _demo;
+    private bool _hotkeyFellBack;
     private string _hotkeyLabel = "不可用";
 
     // 拖拽状态
@@ -62,8 +63,9 @@ public partial class LineWindow : Window
     private PegItem? _pressItem;
     private bool _dragging;
 
-    public LineWindow()
+    public LineWindow(AppSettings settings)
     {
+        _settings = settings;
         InitializeComponent();
 
         Width = SystemParameters.PrimaryScreenWidth;
@@ -71,6 +73,7 @@ public partial class LineWindow : Window
         Top = -Height; // 初始完全移出屏幕（白底窗口不能压在桌面上）
         Rope.Data = RopeGeometry();
         Pegs.ItemsSource = _pegs;
+        _pegs.CollectionChanged += Pegs_CollectionChanged;
 
         _hideTimer = new DispatcherTimer { Interval = HideDelay };
         _hideTimer.Tick += (_, _) => { _hideTimer.Stop(); if (!_mouseInside) SlideTo(false); };
@@ -91,7 +94,11 @@ public partial class LineWindow : Window
 
     private double HiddenTop => -Height;
 
-    // ---------- HWND 相关初始化 ----------
+    internal void PrepareDemo()
+    {
+        _demo = true;
+        _suspendPersist = true;
+    }
 
     internal void SelftestPeg(string path) => AddCapture(path, fromClipboard: false);
 
@@ -118,7 +125,7 @@ public partial class LineWindow : Window
     {
         var item = new PegItem("(demo)", bmp, _rng.NextDouble() * 10 - 5);
         _pegs.Add(item);
-        while (_pegs.Count > MaxPegs) _pegs.RemoveAt(0);
+        PegStore.TrimOldest(_pegs, _settings.MaxPegs);
     }
 
     private static BitmapSource SyntheticCapture(Color bg, string label)
@@ -147,29 +154,16 @@ public partial class LineWindow : Window
         // 窗口的 per-pixel alpha 弄坏（整窗变白底）。TOOLWINDOW/NOACTIVATE 由
         // ShowInTaskbar=False + ShowActivated=False 承担。
 
-        if (!AddClipboardFormatListener(hwnd)) Logger.Log("clipboard listener FAILED");
+        _tray = new TrayIcon(hwnd, WM_TRAYICON, "Clothesline — 截图晾衣绳");
+        SyncClipboardListener();
+        ReregisterHotkey();
 
-        // Ctrl+Alt+T 常被占用，失败则回退 Ctrl+Alt+L
-        if (RegisterHotKey(hwnd, HOTKEY_ID, MOD_CONTROL | MOD_ALT, (uint)'T'))
-        {
-            _hotkeyLabel = "Ctrl+Alt+T";
-            Logger.Log("hotkey: Ctrl+Alt+T");
-        }
-        else if (RegisterHotKey(hwnd, HOTKEY_ID, MOD_CONTROL | MOD_ALT, (uint)'L'))
-        {
-            _hotkeyLabel = "Ctrl+Alt+L";
-            Logger.Log("hotkey fallback: Ctrl+Alt+L");
-        }
-        else
-        {
-            Logger.Log("hotkey register FAILED (both Ctrl+Alt+T and Ctrl+Alt+L are taken)");
-        }
+        _watchers = new FolderWatchSet();
+        _watchers.SetHandler(path => Dispatcher.BeginInvoke(() => AddCapture(path, fromClipboard: false)));
+        _watchers.Replace(_settings.WatchFolders);
 
-        _watcher = new FolderWatcher(App.ScreenshotsDir);
-        _watcher.CaptureFound = path => Dispatcher.BeginInvoke(() => AddCapture(path, fromClipboard: false));
-
-        _tray = new TrayIcon(hwnd, WM_TRAYICON, "Clothesline — screenshot clothesline");
         CreateHotZone();
+        if (!_demo) RestorePegs();
         Logger.Log("ready");
     }
 
@@ -220,7 +214,7 @@ public partial class LineWindow : Window
         switch (msg)
         {
             case WM_CLIPBOARDUPDATE:
-                if (DateTime.UtcNow >= _suppressClipboardUntil)
+                if (_settings.ClipboardWatchEnabled && DateTime.UtcNow >= _suppressClipboardUntil)
                     Dispatcher.BeginInvoke(ReadClipboard);
                 handled = true;
                 break;
@@ -244,9 +238,15 @@ public partial class LineWindow : Window
     {
         try
         {
+            if (!_settings.ClipboardWatchEnabled) return;
             if (!Clipboard.ContainsImage()) return;
             var img = Clipboard.GetImage();
             if (img == null) return;
+            if (!_settings.ClipboardAccepts(img.PixelWidth, img.PixelHeight))
+            {
+                Logger.Log($"clipboard filtered {img.PixelWidth}x{img.PixelHeight}");
+                return;
+            }
 
             // 微信等程序的 DIB 没有 alpha 字节（全 0），直接存会得到"全透明"的 PNG，
             // 卡片上图片就隐形了。把 alpha 抬满再存（截图本来就是不透明的）。
@@ -270,6 +270,12 @@ public partial class LineWindow : Window
         try
         {
             if (!File.Exists(path)) return;
+            if (_pegs.Any(p => string.Equals(p.FilePath, path, StringComparison.OrdinalIgnoreCase)))
+            {
+                Logger.Log("already pegged: " + path);
+                return;
+            }
+
             var thumb = LoadThumbnail(path);
             if (thumb == null) { Logger.Log("unreadable: " + path); return; }
 
@@ -284,8 +290,9 @@ public partial class LineWindow : Window
 
             var item = new PegItem(path, thumb, _rng.NextDouble() * 10 - 5);
             _pegs.Add(item);
-            while (_pegs.Count > MaxPegs) _pegs.RemoveAt(0);
+            PegStore.TrimOldest(_pegs, _settings.MaxPegs);
             Logger.Log($"pegged ({(fromClipboard ? "clipboard" : "file")}): {path}");
+            SnapToNewest();
 
             if (_shown) SwingOne(item);
             else Peek();
@@ -293,6 +300,77 @@ public partial class LineWindow : Window
         catch (Exception ex)
         {
             Logger.Log("addcapture: " + ex);
+        }
+    }
+
+    private void RestorePegs()
+    {
+        _suspendPersist = true;
+        var loaded = 0;
+        var unreadable = 0;
+        try
+        {
+            foreach (var row in PegStore.Load(App.DataDir))
+            {
+                var thumb = LoadThumbnail(row.FilePath);
+                if (thumb == null)
+                {
+                    unreadable++;
+                    Logger.Log("restore unreadable: " + row.FilePath);
+                    continue;
+                }
+                _pegs.Add(new PegItem(row.FilePath, thumb, row.Angle));
+                loaded++;
+            }
+            PegStore.TrimOldest(_pegs, _settings.MaxPegs);
+            Logger.Log("restored pegs: " + loaded);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("pegs.json unreadable: " + ex);
+            QuarantinePegStore();
+            _tray?.ShowBalloon("晾衣绳记录损坏", "pegs.json 无法读取，已改名为 pegs.json.bad，本次从空绳子开始。");
+        }
+        finally
+        {
+            _suspendPersist = false;
+        }
+
+        if (!_pegStoreBroken && unreadable == 0) RememberPegs();
+        else if (unreadable > 0) Logger.Log("pegs.json kept because " + unreadable + " file(s) could not be read");
+        SnapToNewest();
+    }
+
+    private void QuarantinePegStore()
+    {
+        try
+        {
+            var path = PegStore.FilePath(App.DataDir);
+            if (!File.Exists(path)) return;
+            var bad = path + ".bad";
+            if (File.Exists(bad)) File.Delete(bad);
+            File.Move(path, bad);
+            Logger.Log("moved unreadable pegs.json to pegs.json.bad");
+        }
+        catch (Exception ex)
+        {
+            _pegStoreBroken = true;
+            Logger.Log("could not quarantine pegs.json: " + ex.Message);
+        }
+    }
+
+    private void Pegs_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) => RememberPegs();
+
+    private void RememberPegs()
+    {
+        if (_suspendPersist || _pegStoreBroken || _demo) return;
+        try
+        {
+            PegStore.Save(App.DataDir, _pegs.Select(p => new PegRecord { FilePath = p.FilePath, Angle = p.Angle }));
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("pegs save: " + ex.Message);
         }
     }
 
@@ -445,6 +523,23 @@ public partial class LineWindow : Window
         item.Rot.BeginAnimation(RotateTransform.AngleProperty, anim);
     }
 
+    private void SnapToNewest()
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            PegScroll.UpdateLayout();
+            PegScroll.ScrollToRightEnd();
+        }, DispatcherPriority.Background);
+    }
+
+    private void PegScroll_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (PegScroll.ScrollableWidth <= 0) return;
+        double ticks = e.Delta / 120.0;
+        PegScroll.ScrollToHorizontalOffset(PegScroll.HorizontalOffset - ticks * 110);
+        e.Handled = true;
+    }
+
     // ---------- 照片交互 ----------
 
     private void Peg_MouseDown(object sender, MouseButtonEventArgs e)
@@ -474,10 +569,11 @@ public partial class LineWindow : Window
 
         _dragging = true;
         var item = _pressItem;
+        var effect = DragDropEffects.None;
         try
         {
             var data = new DataObject(DataFormats.FileDrop, new[] { item.FilePath });
-            DragDrop.DoDragDrop(Pegs, data, DragDropEffects.Copy | DragDropEffects.Link);
+            effect = DragDrop.DoDragDrop(Pegs, data, DragDropEffects.Copy | DragDropEffects.Move);
         }
         catch (Exception ex)
         {
@@ -486,6 +582,30 @@ public partial class LineWindow : Window
         _pressPoint = null;
         _pressItem = null;
         _dragging = false;
+        FinishDrag(item, effect);
+    }
+
+    /// <summary>
+    /// 文件夹：取下，文件保留（资源管理器自己复制或移动）。
+    /// 回收站：文件进回收站并取下。认不出的落点不动夹子；文件已被系统挪走时只取下。
+    /// </summary>
+    private void FinishDrag(PegItem item, DragDropEffects effect)
+    {
+        if (effect == DragDropEffects.None) return;
+        var kind = ShellDrop.ClassifyAtCursor();
+        Logger.Log($"drag effect={effect} kind={kind} {item.FilePath}");
+        switch (kind)
+        {
+            case DropKind.RecycleBin:
+                TakeDown(item, deleteFile: true);
+                break;
+            case DropKind.Folder:
+                TakeDown(item, deleteFile: false);
+                break;
+            default:
+                if (!File.Exists(item.FilePath)) TakeDown(item, deleteFile: false);
+                break;
+        }
     }
 
     private void Peg_MouseUp(object sender, MouseButtonEventArgs e)
@@ -496,7 +616,7 @@ public partial class LineWindow : Window
         _pressItem = null;
         _dragging = false;
         if (item == null || wasDragging) return;
-        if (e.ClickCount >= 2) return; // 双击交给 Peg_DoubleClick
+        if (e.ClickCount >= 2) return;
         CopyToClipboard(item);
     }
 
@@ -518,20 +638,39 @@ public partial class LineWindow : Window
         {
             var menu = new ContextMenu { Placement = PlacementMode.MousePoint, PlacementTarget = fe };
 
-            var open = new MenuItem { Header = "Open image" };
+            var open = new MenuItem { Header = "打开图片" };
             open.Click += (_, _) => OpenFile(item);
-            var folder = new MenuItem { Header = "Show in folder" };
+            var folder = new MenuItem { Header = "打开所在文件夹" };
             folder.Click += (_, _) => RevealFile(item.FilePath);
-            var remove = new MenuItem { Header = "Take down" };
-            remove.Click += (_, _) => _pegs.Remove(item);
+            var remove = new MenuItem { Header = "取下" };
+            remove.Click += (_, _) => TakeDown(item, deleteFile: false);
+            // P1 扩展点：贴图 Pin、历史、OCR 从这里加菜单，不要塞进拖拽路径。
+            var delete = new MenuItem { Header = "取下并删除文件" };
+            delete.Click += (_, _) => TakeDown(item, deleteFile: true);
 
             menu.Items.Add(open);
             menu.Items.Add(folder);
             menu.Items.Add(new Separator());
             menu.Items.Add(remove);
+            menu.Items.Add(delete);
             menu.IsOpen = true;
             e.Handled = true;
         }
+    }
+
+    /// <summary>取下夹子。deleteFile 为真时把文件移进回收站；删除失败则夹子留在绳子上。</summary>
+    private void TakeDown(PegItem item, bool deleteFile)
+    {
+        if (deleteFile && File.Exists(item.FilePath))
+        {
+            if (!ShellDrop.TryRecycle(item.FilePath))
+            {
+                _tray?.ShowBalloon("无法删除", "文件仍在原处，夹子保留。");
+                return;
+            }
+        }
+        _pegs.Remove(item);
+        Logger.Log((deleteFile ? "taken down and deleted: " : "taken down: ") + item.FilePath);
     }
 
     private void Peg_MouseEnter(object sender, MouseEventArgs e)
@@ -600,6 +739,119 @@ public partial class LineWindow : Window
         return null;
     }
 
+    // ---------- 设置 / 热键 / 剪贴板 ----------
+
+    private void ShowSettings()
+    {
+        _peekTimer.Stop();
+        _hideTimer.Stop();
+        SlideTo(false, instant: true);
+        if (_hotZone != null) _hotZone.Visibility = Visibility.Collapsed;
+        try
+        {
+            var dlg = new SettingsWindow(_settings.Clone());
+            if (dlg.ShowDialog() == true && dlg.Result != null)
+                ApplySettings(dlg.Result);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("settings: " + ex);
+            _tray?.ShowBalloon("设置未保存", "写入设置失败，原配置仍在使用。");
+        }
+        finally
+        {
+            if (_hotZone != null && !_shown) _hotZone.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void ApplySettings(AppSettings next)
+    {
+        next.Normalize();
+        next.Save(App.DataDir);
+        _settings = next;
+        PegStore.TrimOldest(_pegs, _settings.MaxPegs);
+        _watchers?.Replace(_settings.WatchFolders);
+        SyncClipboardListener();
+        ReregisterHotkey();
+        SnapToNewest();
+        Logger.Log($"settings applied max={_settings.MaxPegs} clipboard={_settings.ClipboardWatchEnabled} folders={_settings.WatchFolders.Count}");
+    }
+
+    private void SyncClipboardListener()
+    {
+        if (_src == null) return;
+        var hwnd = _src.Handle;
+        if (_settings.ClipboardWatchEnabled)
+        {
+            if (_clipboardListening) return;
+            if (AddClipboardFormatListener(hwnd))
+            {
+                _clipboardListening = true;
+                Logger.Log("clipboard listener on");
+            }
+            else Logger.Log("clipboard listener FAILED");
+        }
+        else if (_clipboardListening)
+        {
+            RemoveClipboardFormatListener(hwnd);
+            _clipboardListening = false;
+            Logger.Log("clipboard listener off");
+        }
+    }
+
+    private void ReregisterHotkey()
+    {
+        if (_src == null) return;
+        var hwnd = _src.Handle;
+        UnregisterHotKey(hwnd, HOTKEY_ID);
+
+        var preferred = HotkeyChord.FromSettings(_settings);
+        HotkeyChord? used = null;
+        foreach (var chord in HotkeyChord.RegistrationOrder(preferred))
+        {
+            if (!chord.IsRegisterable || chord.VirtualKey is not uint vk) continue;
+            if (RegisterHotKey(hwnd, HOTKEY_ID, chord.ModifierFlags, vk))
+            {
+                used = chord;
+                break;
+            }
+            Logger.Log("hotkey busy: " + chord.Label);
+        }
+
+        if (used == null)
+        {
+            _hotkeyLabel = "不可用";
+            _hotkeyFellBack = false;
+            Logger.Log("hotkey register FAILED");
+            _tray?.ShowBalloon("热键注册失败", "首选和回退热键都被占用，请到设置里换一个。");
+        }
+        else
+        {
+            _hotkeyLabel = used.Label;
+            _hotkeyFellBack = !used.SameBinding(preferred);
+            Logger.Log(_hotkeyFellBack ? "hotkey fallback: " + used.Label : "hotkey: " + used.Label);
+            if (_hotkeyFellBack)
+                _tray?.ShowBalloon("热键被占用", $"{preferred.Label} 无法注册，已改用 {used.Label}。可在设置里更换。");
+        }
+        UpdateTrayTip();
+    }
+
+    private void UpdateTrayTip()
+    {
+        var tip = _hotkeyLabel == "不可用"
+            ? "Clothesline — 截图晾衣绳"
+            : $"Clothesline — 截图晾衣绳 ({_hotkeyLabel})";
+        _tray?.SetTip(tip);
+    }
+
+    private string ToggleHeader()
+    {
+        if (_hotkeyLabel == "不可用") return "显示 / 收起（热键不可用）";
+        return _hotkeyFellBack
+            ? $"显示 / 收起（{_hotkeyLabel}，首选被占用）"
+            : $"显示 / 收起（{_hotkeyLabel}）";
+    }
+
     // ---------- 托盘 / 退出 ----------
 
     private void ShowTrayMenu()
@@ -609,18 +861,44 @@ public partial class LineWindow : Window
             SetForegroundWindow(new WindowInteropHelper(this).Handle);
             var menu = new ContextMenu { Placement = PlacementMode.MousePoint, PlacementTarget = this };
 
-            var toggle = new MenuItem { Header = $"Show / hide ({_hotkeyLabel})" };
+            var toggle = new MenuItem { Header = ToggleHeader() };
             toggle.Click += (_, _) => ToggleShow();
-            var shots = new MenuItem { Header = "Open screenshots folder" };
-            shots.Click += (_, _) => OpenFolder(App.ScreenshotsDir);
-            var caps = new MenuItem { Header = "Open clipboard captures folder" };
-            caps.Click += (_, _) => OpenFolder(App.CapturesDir);
-            var exit = new MenuItem { Header = "Exit Clothesline" };
-            exit.Click += (_, _) => ExitApp();
+            var clip = new MenuItem
+            {
+                Header = "监听剪贴板",
+                IsCheckable = true,
+                IsChecked = _settings.ClipboardWatchEnabled,
+            };
+            clip.Click += (_, _) =>
+            {
+                var previous = _settings.ClipboardWatchEnabled;
+                _settings.ClipboardWatchEnabled = clip.IsChecked == true;
+                try
+                {
+                    _settings.Save(App.DataDir);
+                    SyncClipboardListener();
+                }
+                catch (Exception ex)
+                {
+                    _settings.ClipboardWatchEnabled = previous;
+                    clip.IsChecked = previous;
+                    Logger.Log("settings save: " + ex.Message);
+                    _tray?.ShowBalloon("设置未保存", "剪贴板开关没有写入。");
+                }
+            };
+            var settings = new MenuItem { Header = "设置…" };
+            settings.Click += (_, _) => ShowSettings();
 
             menu.Items.Add(toggle);
+            menu.Items.Add(clip);
+            menu.Items.Add(settings);
             menu.Items.Add(new Separator());
-            menu.Items.Add(shots);
+            AddWatchFolderItems(menu);
+            var caps = new MenuItem { Header = "打开剪贴板目录" };
+            caps.Click += (_, _) => OpenFolder(App.CapturesDir);
+            var exit = new MenuItem { Header = "退出 Clothesline" };
+            exit.Click += (_, _) => ExitApp();
+
             menu.Items.Add(caps);
             menu.Items.Add(new Separator());
             menu.Items.Add(exit);
@@ -630,6 +908,31 @@ public partial class LineWindow : Window
         {
             Logger.Log("traymenu: " + ex.Message);
         }
+    }
+
+    private void AddWatchFolderItems(ContextMenu menu)
+    {
+        if (_settings.WatchFolders.Count <= 1)
+        {
+            var one = new MenuItem { Header = "打开监视文件夹", IsEnabled = _settings.WatchFolders.Count == 1 };
+            if (_settings.WatchFolders.Count == 1)
+            {
+                var path = _settings.WatchFolders[0];
+                one.Click += (_, _) => OpenFolder(path);
+            }
+            menu.Items.Add(one);
+            return;
+        }
+
+        var parent = new MenuItem { Header = "打开监视文件夹" };
+        foreach (var dir in _settings.WatchFolders)
+        {
+            var path = dir;
+            var item = new MenuItem { Header = path.Replace("_", "__") };
+            item.Click += (_, _) => OpenFolder(path);
+            parent.Items.Add(item);
+        }
+        menu.Items.Add(parent);
     }
 
     private void OpenFolder(string path)
@@ -643,12 +946,12 @@ public partial class LineWindow : Window
         Logger.Log("exit requested");
         try
         {
-            _watcher?.Dispose();
+            _watchers?.Dispose();
             _tray?.Dispose();
             if (_src != null)
             {
                 UnregisterHotKey(_src.Handle, HOTKEY_ID);
-                RemoveClipboardFormatListener(_src.Handle);
+                if (_clipboardListening) RemoveClipboardFormatListener(_src.Handle);
             }
         }
         catch { }
@@ -657,8 +960,6 @@ public partial class LineWindow : Window
 
     // ---------- Win32 ----------
 
-    [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
-    [DllImport("user32.dll")] private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
     [DllImport("user32.dll")] private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
     [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
     [DllImport("user32.dll")] private static extern bool AddClipboardFormatListener(IntPtr hWnd);
