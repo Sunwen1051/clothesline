@@ -15,6 +15,7 @@
     <Compile Include="..\DropLocation.cs" Link="DropLocation.cs" />
     <Compile Include="..\HistoryStore.cs" Link="HistoryStore.cs" />
     <Compile Include="..\PegZoom.cs" Link="PegZoom.cs" />
+    <Compile Include="..\RopeCurve.cs" Link="RopeCurve.cs" />
     <Compile Include="..\OcrActions.cs" Link="OcrActions.cs" />
   </ItemGroup>
 
