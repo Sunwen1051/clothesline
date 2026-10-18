@@ -9,12 +9,12 @@ internal static class PegZoom
     public const double Max = 2;
     public const double Default = 1;
     public const double Step = 1.1;
-    public const double DefaultLineHeight = (BaseHeight + CardExtra) * Default + WindowChrome;
+    public const double DefaultLineHeight = (BaseHeight + CardExtra) * Default + WindowChrome + RopeCurve.MaxHang;
 
-    /// <summary>卡片上下留白：边框外边距 14 加内边距 10。</summary>
-    public const double CardExtra = 24;
+    /// <summary>玻璃卡片上下留白：外边距 18+8，内边距 8+8。</summary>
+    public const double CardExtra = 42;
 
-    /// <summary>绳子、阴影和横向滚动条占用的高度。</summary>
+    /// <summary>绳子、阴影和横向滚动条占用的高度，不含中间下垂。</summary>
     public const double WindowChrome = 56;
 
     public enum Gesture
@@ -35,5 +35,5 @@ internal static class PegZoom
     }
 
     public static double LineHeight(double maxZoom) =>
-        (BaseHeight + CardExtra) * Next(maxZoom, 0) + WindowChrome;
+        (BaseHeight + CardExtra) * Next(maxZoom, 0) + WindowChrome + RopeCurve.MaxHang;
 }

@@ -54,6 +54,8 @@ public partial class LineWindow : Window
     private bool _suspendPersist;
     private bool _pegStoreBroken;
     private bool _demo;
+    private bool _hanging;
+    private double _ropeDrawnWidth = -1;
     private bool _hotkeyFellBack;
     private string _hotkeyLabel = "不可用";
     private readonly List<PinWindow> _pins = new();
@@ -73,9 +75,13 @@ public partial class LineWindow : Window
         Width = SystemParameters.PrimaryScreenWidth;
         Height = PegZoom.LineHeight(PegZoom.Default);
         Top = -Height; // 初始完全移出屏幕（白底窗口不能压在桌面上）
-        Rope.Data = RopeGeometry();
+        ApplyRope(Width);
         Pegs.ItemsSource = _pegs;
         _pegs.CollectionChanged += Pegs_CollectionChanged;
+        SizeChanged += (_, _) => HangPegs();
+        Loaded += (_, _) => HangPegs();
+        Root.LayoutUpdated += (_, _) => HangPegs();
+        PegScroll.ScrollChanged += (_, _) => HangPegs();
 
         _hideTimer = new DispatcherTimer { Interval = HideDelay };
         _hideTimer.Tick += (_, _) => { _hideTimer.Stop(); if (!_mouseInside) SlideTo(false); };
@@ -87,11 +93,70 @@ public partial class LineWindow : Window
         SourceInitialized += (_, _) => OnHwndReady();
     }
 
-    private PathGeometry RopeGeometry()
+    /// <summary>三条绳子共用一条冻结的弧。宽度不变时不重画，避免布局回调来回触发。</summary>
+    private void ApplyRope(double width)
     {
-        var segment = new QuadraticBezierSegment(new Point(Width / 2, 27), new Point(Width, 13), true);
-        var figure = new PathFigure(new Point(0, 13), new PathSegment[] { segment }, false);
-        return new PathGeometry(new[] { figure });
+        if (!double.IsFinite(width) || width <= 1) return;
+        if (RopeCore.Data != null && Math.Abs(_ropeDrawnWidth - width) < 0.5) return;
+        _ropeDrawnWidth = width;
+        double end = RopeCurve.EndY;
+        var segment = new QuadraticBezierSegment(
+            new Point(width / 2, RopeCurve.ControlY), new Point(width, end), true);
+        var figure = new PathFigure(new Point(0, end), new PathSegment[] { segment }, false);
+        var geo = new PathGeometry(new[] { figure });
+        geo.Freeze();
+        RopeShadow.Data = geo;
+        RopeHighlight.Data = geo;
+        RopeCore.Data = geo;
+    }
+
+    /// <summary>
+    /// 夹子挂点跟着绳子走。用布局坐标（不含 RenderTransform），
+    /// 否则 Hang 自己会进下一次计算。平移放在旋转和缩放之后，单位是窗口像素。
+    /// </summary>
+    private void HangPegs()
+    {
+        if (_hanging) return;
+        _hanging = true;
+        try
+        {
+            double width = ActualWidth > 1 ? ActualWidth : Width;
+            ApplyRope(width);
+            if (!IsLoaded || _pegs.Count == 0) return;
+            for (int i = 0; i < _pegs.Count; i++)
+            {
+                if (Pegs.ItemContainerGenerator.ContainerFromIndex(i) is not FrameworkElement container)
+                    continue;
+                if (container.ActualWidth <= 0) continue;
+                // 容器没有 RenderTransform。子元素的平移如果算进去，下一次会把上次的下垂再减一次。
+                double x = container.ActualWidth / 2;
+                if (VisualTreeHelper.GetChildrenCount(container) > 0 &&
+                    VisualTreeHelper.GetChild(container, 0) is FrameworkElement child &&
+                    child.ActualWidth > 0)
+                {
+                    x = child.Margin.Left + child.ActualWidth / 2;
+                }
+                Point notch;
+                try
+                {
+                    notch = container.TranslatePoint(new Point(x, RopeCurve.NotchY), Root);
+                }
+                catch (InvalidOperationException)
+                {
+                    continue;
+                }
+                double drop = RopeCurve.Y(notch.X, width) - notch.Y;
+                if (Math.Abs(_pegs[i].Hang.Y - drop) > 0.25)
+                    _pegs[i].Hang.Y = drop;
+            }
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        finally
+        {
+            _hanging = false;
+        }
     }
 
     private double HiddenTop => -Height;

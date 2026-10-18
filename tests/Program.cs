@@ -219,9 +219,17 @@ try
     Check(PegZoom.Next(4, 0) == PegZoom.Max, "zero delta still clamps");
     Check(PegZoom.Next(0.1, 0) == PegZoom.Min, "zero delta clamps up to the minimum");
     Check(Math.Abs(PegZoom.Next(double.NaN, 120) - 1.1) < 1e-9, "non-finite zoom starts from the default");
-    Check(PegZoom.LineHeight(1) == 216 + 24 + 56, "line height fits the doubled peg");
-    Check(PegZoom.LineHeight(2) == (216 + 24) * 2 + 56, "line grows with the largest zoom");
-    Check(PegZoom.LineHeight(0.5) == (216 + 24) * 0.5 + 56, "line shrinks when zoomed out");
+    Check(PegZoom.CardExtra == 42, "glass card chrome is 42");
+    Check(RopeCurve.Y(0, 800) == RopeCurve.EndY && RopeCurve.Y(800, 800) == RopeCurve.EndY, "rope ends stay high");
+    Check(RopeCurve.Y(400, 800) == RopeCurve.EndY + RopeCurve.Sag, "rope mid sags");
+    Check(RopeCurve.Sag > 7, "mid sag is deeper than the old curve");
+    Check(Math.Abs(RopeCurve.Y(200, 800) - RopeCurve.Y(600, 800)) < 1e-9, "rope sag is symmetric");
+    Check(RopeCurve.Y(-20, 800) == RopeCurve.EndY, "rope x before the line clamps");
+    Check(RopeCurve.Y(50, 0) == RopeCurve.EndY + RopeCurve.Sag, "missing width uses the sag");
+    Check(RopeCurve.MaxHang == RopeCurve.EndY + RopeCurve.Sag - RopeCurve.NotchY, "max hang is the mid notch drop");
+    Check(PegZoom.LineHeight(1) == 216 + 42 + 56 + RopeCurve.MaxHang, "line height fits the glass card and the sag");
+    Check(PegZoom.LineHeight(2) == (216 + 42) * 2 + 56 + RopeCurve.MaxHang, "line grows with the largest zoom");
+    Check(PegZoom.LineHeight(0.5) == (216 + 42) * 0.5 + 56 + RopeCurve.MaxHang, "line shrinks when zoomed out");
     Check(PegZoom.LineHeight(9) == PegZoom.LineHeight(PegZoom.Max), "line height clamps zoom");
 
     Check(OcrActions.Portion("abcdef", 2, 3) == "cde", "copy uses the selection");

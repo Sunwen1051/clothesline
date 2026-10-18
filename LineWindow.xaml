@@ -9,12 +9,49 @@
         ShowInTaskbar="False" ShowActivated="False"
         Focusable="False" Topmost="True"
         Left="0" Top="0">
+    <Window.Resources>
+        <DropShadowEffect x:Key="CardShadow" BlurRadius="16" ShadowDepth="1" Opacity="0.16" Color="#241C1C1C"/>
+        <DropShadowEffect x:Key="CardShadowHover" BlurRadius="28" ShadowDepth="5" Opacity="0.32" Color="#3A1C1C1C"/>
+    </Window.Resources>
     <!-- alpha=1 而不是全透明：分层窗口按像素 alpha 做鼠标命中，全透明会被系统穿透 -->
     <Grid x:Name="Root" Background="#01000000" MouseLeftButtonDown="Root_MouseDown">
         <!-- 注意：Root 不能挂 RenderTransform——会让 AllowsTransparency 分层窗口整块变白 -->
-        <Path x:Name="Rope" Stroke="#8A6A4F" StrokeThickness="3.5"
-              StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-              VerticalAlignment="Top"/>
+        <Path x:Name="RopeShadow" StrokeThickness="3.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+              VerticalAlignment="Top" Margin="0,2,0,0" IsHitTestVisible="False">
+            <Path.Stroke>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                    <GradientStop Color="#00606870" Offset="0"/>
+                    <GradientStop Color="#55606870" Offset="0.07"/>
+                    <GradientStop Color="#55606870" Offset="0.93"/>
+                    <GradientStop Color="#00606870" Offset="1"/>
+                </LinearGradientBrush>
+            </Path.Stroke>
+            <Path.Effect>
+                <BlurEffect Radius="3"/>
+            </Path.Effect>
+        </Path>
+        <Path x:Name="RopeHighlight" StrokeThickness="1" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+              VerticalAlignment="Top" Margin="0,-0.7,0,0" IsHitTestVisible="False">
+            <Path.Stroke>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                    <GradientStop Color="#00FFFFFF" Offset="0"/>
+                    <GradientStop Color="#E6FFFFFF" Offset="0.08"/>
+                    <GradientStop Color="#E6FFFFFF" Offset="0.92"/>
+                    <GradientStop Color="#00FFFFFF" Offset="1"/>
+                </LinearGradientBrush>
+            </Path.Stroke>
+        </Path>
+        <Path x:Name="RopeCore" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+              VerticalAlignment="Top" IsHitTestVisible="False">
+            <Path.Stroke>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                    <GradientStop Color="#00A7B0B8" Offset="0"/>
+                    <GradientStop Color="#FFA7B0B8" Offset="0.05"/>
+                    <GradientStop Color="#FFA7B0B8" Offset="0.95"/>
+                    <GradientStop Color="#00A7B0B8" Offset="1"/>
+                </LinearGradientBrush>
+            </Path.Stroke>
+        </Path>
         <ScrollViewer x:Name="PegScroll"
                       HorizontalScrollBarVisibility="Auto"
                       VerticalScrollBarVisibility="Disabled"
@@ -37,14 +74,22 @@
             </ItemsControl.ItemContainerStyle>
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <Grid Margin="8,0,0,0" Background="Transparent" VerticalAlignment="Top"
+                    <Grid Margin="22,0,0,0" Background="Transparent" VerticalAlignment="Top"
                           RenderTransformOrigin="0.5,0" RenderTransform="{Binding Xf}"
                           MouseEnter="Peg_MouseEnter" MouseLeave="Peg_MouseLeave">
-                        <Border Background="#F7F4EE" CornerRadius="7" Padding="5"
-                                BorderBrush="#D9D0BF" BorderThickness="1" Margin="0,10,0,4">
-                            <Border.Effect>
-                                <DropShadowEffect BlurRadius="10" ShadowDepth="2" Opacity="0.3" Color="Black"/>
-                            </Border.Effect>
+                        <Border Margin="0,18,0,8" CornerRadius="16" Padding="8" BorderThickness="1">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="#C9F7F4EF"/>
+                                    <Setter Property="BorderBrush" Value="#F2FFFFFF"/>
+                                    <Setter Property="Effect" Value="{StaticResource CardShadow}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Grid}}" Value="True">
+                                            <Setter Property="Effect" Value="{StaticResource CardShadowHover}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
                             <Image Source="{Binding Bitmap}" Stretch="Uniform"
                                    Width="{Binding ThumbWidth}" Height="{Binding ThumbHeight}"
                                    Cursor="Hand"
@@ -53,10 +98,26 @@
                                    PreviewMouseLeftButtonUp="Peg_MouseUp"
                                    MouseRightButtonDown="Peg_RightDown"/>
                         </Border>
-                        <Rectangle Width="12" Height="20" RadiusX="3" RadiusY="3"
-                                   Fill="#C98F4E" Stroke="#8A5A28" StrokeThickness="1"
-                                   HorizontalAlignment="Center" VerticalAlignment="Top"
-                                   Margin="0,6,0,0"/>
+                        <Grid Width="9" Height="26" HorizontalAlignment="Center" VerticalAlignment="Top" IsHitTestVisible="False">
+                            <Border CornerRadius="4.5" Background="#33000000" Margin="0.8,1.2,0,0"/>
+                            <Border CornerRadius="4.5" BorderThickness="0.6">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                        <GradientStop Color="#F7F9FB" Offset="0"/>
+                                        <GradientStop Color="#C5CED6" Offset="0.42"/>
+                                        <GradientStop Color="#F3F6F8" Offset="0.58"/>
+                                        <GradientStop Color="#9AA4AD" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <Border.BorderBrush>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                        <GradientStop Color="#FFFFFF" Offset="0"/>
+                                        <GradientStop Color="#7E888F" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Border.BorderBrush>
+                                <Ellipse Width="5" Height="3.2" Fill="#5C656C" VerticalAlignment="Top" Margin="0,3,0,0"/>
+                            </Border>
+                        </Grid>
                         <TextBlock Text="已复制" FontSize="11" Foreground="#4A4438"
                                    HorizontalAlignment="Center" VerticalAlignment="Bottom"
                                    Margin="0,0,0,4">

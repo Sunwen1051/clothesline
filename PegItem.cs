@@ -12,6 +12,7 @@ public sealed class PegItem : INotifyPropertyChanged
 
     public RotateTransform Rot { get; }
     public ScaleTransform Scale { get; }
+    public TranslateTransform Hang { get; }
     public TransformGroup Xf { get; }
 
     private double _zoom = PegZoom.Default;
@@ -52,9 +53,11 @@ public sealed class PegItem : INotifyPropertyChanged
         Angle = angle;
         Rot = new RotateTransform(angle);
         Scale = new ScaleTransform(1, 1);
+        Hang = new TranslateTransform();
         Xf = new TransformGroup();
         Xf.Children.Add(Rot);
         Xf.Children.Add(Scale);
+        Xf.Children.Add(Hang);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

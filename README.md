@@ -53,7 +53,9 @@ The tray item **设置…** edits capacity (default 20, range 1–200), history 
 - **取下并删除文件** and a drop on the Recycle Bin do not enter history. A drop on a folder is recorded only when the original file is still there.
 - **识别文字** uses Windows.Media.Ocr and shows the text in its own window. It does **not** copy the text automatically. Select a span and press **复制** to copy that span; with no selection, **复制** copies the whole text. **翻译** opens [Bing Translator](https://www.bing.com/translator) in the default browser (`from=auto`, target `zh-Hans`). A selection is sent alone; otherwise the whole text is sent. Only the first 1000 characters are included. If no language pack is installed, or recognition fails, the app shows a message and keeps running. A normal click still copies the image, not a pin.
 
-Peg thumbnails default to 184×216, twice the 0.3.0 size. The wheel over one photo zooms only that peg. Zooming in grows the line to the tallest peg; zooming out does not shrink the line below the default height. The wheel over empty rope only scrolls sideways.
+Peg thumbnails default to 184×216. The wheel over one photo zooms only that peg. Zooming in grows the line to the tallest peg; zooming out does not shrink the line below the default height. The wheel over empty rope only scrolls sideways. There is no S/M/L size menu.
+
+The rope is a thin neutral gray with a soft shadow, a light highlight, and fades at both ends. It sags a little more in the middle, and each clip hangs on that curve. Clips are brushed aluminum. Cards are translucent glass: about a 16px corner, a light edge, padding, and a soft shadow that deepens when the pointer is over the card. Clips sit farther apart than the 184×216 card itself.
 
 Pen, arrow, and mosaic annotation are not in this version.
 
