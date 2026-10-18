@@ -17,11 +17,11 @@ Inspired by [tendedero](https://github.com/alejandrobujan/tendedero) (macOS, Swi
 
 | Action | Effect |
 | --- | --- |
-| Move the mouse to the very top edge of the screen | The line slides down |
+| Hold the pointer on the very top edge for about half a second | The line slides down. Moving away sooner cancels it. The hotkey and a new screenshot still show the line immediately |
 | Move the mouse away (or click empty rope) | The line retracts |
 | Hotkey (default `Ctrl+Alt+T`) | Toggle the line. On conflict, try `Ctrl+Alt+L` then `Ctrl+Alt+T` (skip chords already tried) and show a tray balloon |
 | A new screenshot arrives | The line peeks down for a moment |
-| Click a photo | Copy the full-resolution original to the clipboard |
+| Click a photo | Copy the full-resolution original to the clipboard. A small capsule says 已复制 |
 | Double-click | Open in the default image viewer |
 | Drag onto an Explorer folder or the desktop | Unpin. The file stays (Explorer copies or moves it) |
 | Drag onto the Recycle Bin | Move the file to the Recycle Bin and unpin |
@@ -48,10 +48,10 @@ The tray item **设置…** edits capacity (default 20, range 1–200), history 
 
 ## Pin, history, OCR
 
-- **贴图 (pin)** does not take the peg off the line. It is a separate always-on-top window: drag to move, use the corner or the wheel to scale, **锁定** to lock position, **穿透** for click-through. Click-through also sets the pin to 50% opacity. After click-through is on, turn it off or close the pin from the tray item **已打开的贴图**. Closing a pin does **not** delete the file, and the peg stays on the line.
+- **贴图 (pin)** does not take the peg off the line. It is a separate always-on-top glass window: drag to move, use the metal corner or the wheel to scale, **锁定** to lock position, **穿透** for click-through. Click-through also sets the pin to 50% opacity. After click-through is on, turn it off or close the pin from the tray item **已打开的贴图**. Closing a pin does **not** delete the file, and the peg stays on the line.
 - **取下 (take down)** without deleting the file appends `%LOCALAPPDATA%\Clothesline\history.json`. The tray item **历史…** can hang it again or open another pin. Hanging it again removes that history row. The list drops the oldest past the cap, and drops rows whose files are gone.
 - **取下并删除文件** and a drop on the Recycle Bin do not enter history. A drop on a folder is recorded only when the original file is still there.
-- **识别文字** uses Windows.Media.Ocr and shows the text in its own window. It does **not** copy the text automatically. Select a span and press **复制** to copy that span; with no selection, **复制** copies the whole text. **翻译** opens [Bing Translator](https://www.bing.com/translator) in the default browser (`from=auto`, target `zh-Hans`). A selection is sent alone; otherwise the whole text is sent. Only the first 1000 characters are included. If no language pack is installed, or recognition fails, the app shows a message and keeps running. A normal click still copies the image, not a pin.
+- **识别文字** uses Windows.Media.Ocr and shows the text in its own glass window. Drag the title to move it, and the metal corner to resize. It does **not** copy the text automatically. Select a span and press **复制** to copy that span; with no selection, **复制** copies the whole text. **翻译** opens [Bing Translator](https://www.bing.com/translator) in the default browser (`from=auto`, target `zh-Hans`). A selection is sent alone; otherwise the whole text is sent. Only the first 1000 characters are included. If no language pack is installed, or recognition fails, the app shows a message and keeps running. A normal click still copies the image, not a pin.
 
 Peg thumbnails default to 184×216. The wheel over one photo zooms only that peg. Zooming in grows the line to the tallest peg; zooming out does not shrink the line below the default height. The wheel over empty rope only scrolls sideways. There is no S/M/L size menu.
 
@@ -63,7 +63,7 @@ Pen, arrow, and mosaic annotation are not in this version.
 
 - Primary screen only; screenshots taken anywhere hang on the primary screen's line.
 - While a fullscreen game or presentation is in the foreground, new captures don't auto-peek (they are still pegged; use the hotkey or the top edge).
-- The top hotzone is 3 px tall: precise, but it can be blocked by other always-on-top windows covering the screen edge (use the hotkey then).
+- The top hotzone is 3 px tall and waits about half a second. It can be blocked by other always-on-top windows covering the screen edge (use the hotkey then). The hotkey and a new screenshot do not wait.
 - Folder and Recycle Bin drops are recognized for Explorer. Other file managers may not report a target; use the context menu then.
 - OCR needs a Windows OCR language pack. Translation is Bing Translator in the browser, not an in-app engine. A click-through pin is 50% opaque and is dismissed from the tray.
 - No long-screenshot stitching and no global Win+drag capture.

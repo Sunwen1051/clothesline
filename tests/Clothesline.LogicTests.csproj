@@ -16,6 +16,7 @@
     <Compile Include="..\HistoryStore.cs" Link="HistoryStore.cs" />
     <Compile Include="..\PegZoom.cs" Link="PegZoom.cs" />
     <Compile Include="..\RopeCurve.cs" Link="RopeCurve.cs" />
+    <Compile Include="..\EdgeHold.cs" Link="EdgeHold.cs" />
     <Compile Include="..\OcrActions.cs" Link="OcrActions.cs" />
   </ItemGroup>
 

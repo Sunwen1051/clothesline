@@ -232,6 +232,20 @@ try
     Check(PegZoom.LineHeight(0.5) == (216 + 42) * 0.5 + 56 + RopeCurve.MaxHang, "line shrinks when zoomed out");
     Check(PegZoom.LineHeight(9) == PegZoom.LineHeight(PegZoom.Max), "line height clamps zoom");
 
+    Check(EdgeHold.Milliseconds == 500, "top edge waits half a second");
+    var edge = new EdgeHold();
+    Check(!edge.Due(), "top edge does not reveal before the pointer arrives");
+    edge.Enter();
+    Check(edge.Due(), "holding the top edge reveals the line");
+    Check(!edge.Due(), "one hold reveals only once");
+    edge.Enter();
+    edge.Leave();
+    Check(!edge.Due(), "leaving the top edge early cancels the reveal");
+    edge.Leave();
+    edge.Enter();
+    edge.Enter();
+    Check(edge.Pending && edge.Due() && !edge.Pending, "a second enter still waits for one hold");
+
     Check(OcrActions.Portion("abcdef", 2, 3) == "cde", "copy uses the selection");
     Check(OcrActions.Portion("abcdef", 0, 0) == "abcdef", "copy uses all text when nothing is selected");
     Check(OcrActions.Portion("abcdef", -1, 2) == "abcdef", "bad selection copies all");

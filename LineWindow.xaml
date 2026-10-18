@@ -118,11 +118,14 @@
                                 <Ellipse Width="5" Height="3.2" Fill="#5C656C" VerticalAlignment="Top" Margin="0,3,0,0"/>
                             </Border>
                         </Grid>
-                        <TextBlock Text="已复制" FontSize="11" Foreground="#4A4438"
-                                   HorizontalAlignment="Center" VerticalAlignment="Bottom"
-                                   Margin="0,0,0,4">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
+                        <Border HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,10"
+                                CornerRadius="10" Background="#E8F7F4EF" BorderBrush="#F2FFFFFF" BorderThickness="1"
+                                Padding="10,3" IsHitTestVisible="False">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="8" ShadowDepth="1" Opacity="0.18" Color="#1C1C1C"/>
+                            </Border.Effect>
+                            <Border.Style>
+                                <Style TargetType="Border">
                                     <Setter Property="Opacity" Value="0"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding CopyFeedback}" Value="True">
@@ -143,8 +146,9 @@
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
+                            </Border.Style>
+                            <TextBlock Text="已复制" FontSize="12" Foreground="#3E474E"/>
+                        </Border>
                     </Grid>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
