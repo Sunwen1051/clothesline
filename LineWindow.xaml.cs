@@ -27,7 +27,6 @@ public partial class LineWindow : Window
 
     private const int HOTKEY_ID = 1;
 
-    private const double WinH = 190;
     private static readonly TimeSpan DedupWindow = TimeSpan.FromSeconds(6);
     private static readonly TimeSpan PeekHold = TimeSpan.FromSeconds(2.8);
     private static readonly TimeSpan HideDelay = TimeSpan.FromMilliseconds(350);
@@ -72,7 +71,7 @@ public partial class LineWindow : Window
         InitializeComponent();
 
         Width = SystemParameters.PrimaryScreenWidth;
-        Height = WinH;
+        Height = PegZoom.LineHeight(PegZoom.Default);
         Top = -Height; // 初始完全移出屏幕（白底窗口不能压在桌面上）
         Rope.Data = RopeGeometry();
         Pegs.ItemsSource = _pegs;
@@ -362,7 +361,11 @@ public partial class LineWindow : Window
         }
     }
 
-    private void Pegs_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) => RememberPegs();
+    private void Pegs_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        RememberPegs();
+        FitLineHeight();
+    }
 
     private void RememberPegs()
     {
@@ -409,7 +412,7 @@ public partial class LineWindow : Window
             var bmp = new BitmapImage();
             bmp.BeginInit();
             bmp.CacheOption = BitmapCacheOption.OnLoad;
-            bmp.DecodePixelWidth = 420; // 展示用缩略图，省内存
+            bmp.DecodePixelWidth = 800; // 覆盖基准宽 × 最大缩放（184×2）
             bmp.StreamSource = fs;
             bmp.EndInit();
             bmp.Freeze();
@@ -537,10 +540,36 @@ public partial class LineWindow : Window
 
     private void PegScroll_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
+        e.Handled = true;
+        var peg = e.OriginalSource is DependencyObject node ? FindPeg(node) : null;
+        if (PegZoom.Decide(peg != null) == PegZoom.Gesture.ZoomPeg)
+        {
+            double before = peg!.Zoom;
+            peg.Zoom = PegZoom.Next(before, e.Delta);
+            if (Math.Abs(peg.Zoom - before) > 1e-9) FitLineHeight();
+            return;
+        }
+
         if (PegScroll.ScrollableWidth <= 0) return;
         double ticks = e.Delta / 120.0;
         PegScroll.ScrollToHorizontalOffset(PegScroll.HorizontalOffset - ticks * 110);
-        e.Handled = true;
+    }
+
+    private void FitLineHeight()
+    {
+        // 不低于默认高度。缩小单张时绳子不跟着塌下去。
+        double max = PegZoom.Default;
+        foreach (var peg in _pegs)
+        {
+            if (peg.Zoom > max) max = peg.Zoom;
+        }
+
+        double height = PegZoom.LineHeight(max);
+        if (Math.Abs(Height - height) < 0.5) return;
+        Height = height;
+        if (_shown) return;
+        BeginAnimation(Window.TopProperty, null);
+        Top = HiddenTop;
     }
 
     // ---------- 照片交互 ----------
@@ -747,7 +776,9 @@ public partial class LineWindow : Window
 
     private async Task RecognizeAsync(string path)
     {
+        int generation = OcrTextWindow.Claim();
         var outcome = await OcrText.ReadAsync(path);
+        if (!OcrTextWindow.IsCurrent(generation)) return;
         if (!outcome.Available)
         {
             _tray?.ShowBalloon("无法识别", outcome.Error ?? "本机没有可用的 OCR。");
@@ -758,19 +789,8 @@ public partial class LineWindow : Window
             _tray?.ShowBalloon("识别文字", "没有识别到文字。");
             return;
         }
-        try
-        {
-            _suppressClipboardUntil = DateTime.UtcNow.AddMilliseconds(700);
-            Clipboard.SetText(outcome.Text);
-            var preview = outcome.Text.Length > 40 ? outcome.Text.Substring(0, 40) + "…" : outcome.Text;
-            _tray?.ShowBalloon("已复制文字", preview.Replace("\r", " ").Replace("\n", " "));
-            Logger.Log("ocr copied: " + path);
-        }
-        catch (Exception ex)
-        {
-            Logger.Log("ocr copy: " + ex.Message);
-            _tray?.ShowBalloon("无法复制", ex.Message);
-        }
+        OcrTextWindow.Present(outcome.Text, generation);
+        Logger.Log("ocr shown: " + path);
     }
 
     private void ShowHistory()

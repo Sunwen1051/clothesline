@@ -14,6 +14,7 @@ public partial class PinWindow : Window
     private const int GwlExStyle = -20;
     private const int WsExTransparent = 0x00000020;
     private const double ToolbarAndChrome = 52;
+    private const double ClickThroughOpacity = 0.5;
 
     private readonly double _aspect;
     private bool _locked;
@@ -112,7 +113,9 @@ public partial class PinWindow : Window
     private async Task RecognizeAsync()
     {
         Status.Text = "正在识别…";
+        int generation = OcrTextWindow.Claim();
         var outcome = await OcrText.ReadAsync(FilePath);
+        if (!OcrTextWindow.IsCurrent(generation)) return;
         if (!outcome.Available)
         {
             Status.Text = outcome.Error ?? "无法识别。";
@@ -126,18 +129,8 @@ public partial class PinWindow : Window
             return;
         }
 
-        try
-        {
-            Clipboard.SetText(outcome.Text);
-            Status.Text = "文字已复制。";
-            var preview = outcome.Text.Length > 40 ? outcome.Text.Substring(0, 40) + "…" : outcome.Text;
-            Notice?.Invoke("已复制文字", preview.Replace("\r", " ").Replace("\n", " "));
-        }
-        catch (Exception ex)
-        {
-            Status.Text = "复制失败。";
-            Notice?.Invoke("无法复制", ex.Message);
-        }
+        OcrTextWindow.Present(outcome.Text, generation);
+        Status.Text = "识别结果已打开。";
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
@@ -145,6 +138,7 @@ public partial class PinWindow : Window
     /// <summary>只开关 WS_EX_TRANSPARENT，保留原有扩展样式（含分层窗口位），避免整窗变白。</summary>
     private void ApplyClickThrough(bool on)
     {
+        Opacity = on ? ClickThroughOpacity : 1;
         try
         {
             var hwnd = new WindowInteropHelper(this).Handle;
