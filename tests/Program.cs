@@ -208,6 +208,42 @@ try
     HistoryStore.Trim(root, 1);
     hist = HistoryStore.Load(root);
     Check(hist.Count == 1 && hist[0].FilePath == h1, "history trim keeps newest");
+
+    Check(PegZoom.BaseWidth == 184 && PegZoom.BaseHeight == 216, "peg thumbnail is double 92x108");
+    Check(PegZoom.Decide(true) == PegZoom.Gesture.ZoomPeg, "wheel over a peg zooms");
+    Check(PegZoom.Decide(false) == PegZoom.Gesture.ScrollLine, "wheel over the rope scrolls");
+    Check(Math.Abs(PegZoom.Next(1, 120) - 1.1) < 1e-9, "wheel up zooms in");
+    Check(Math.Abs(PegZoom.Next(1, -120) - (1 / 1.1)) < 1e-9, "wheel down zooms out");
+    Check(PegZoom.Next(PegZoom.Max, 120) == PegZoom.Max, "zoom stops at 2");
+    Check(PegZoom.Next(PegZoom.Min, -120) == PegZoom.Min, "zoom stops at 0.5");
+    Check(PegZoom.Next(4, 0) == PegZoom.Max, "zero delta still clamps");
+    Check(PegZoom.Next(0.1, 0) == PegZoom.Min, "zero delta clamps up to the minimum");
+    Check(Math.Abs(PegZoom.Next(double.NaN, 120) - 1.1) < 1e-9, "non-finite zoom starts from the default");
+    Check(PegZoom.LineHeight(1) == 216 + 24 + 56, "line height fits the doubled peg");
+    Check(PegZoom.LineHeight(2) == (216 + 24) * 2 + 56, "line grows with the largest zoom");
+    Check(PegZoom.LineHeight(0.5) == (216 + 24) * 0.5 + 56, "line shrinks when zoomed out");
+    Check(PegZoom.LineHeight(9) == PegZoom.LineHeight(PegZoom.Max), "line height clamps zoom");
+
+    Check(OcrActions.Portion("abcdef", 2, 3) == "cde", "copy uses the selection");
+    Check(OcrActions.Portion("abcdef", 0, 0) == "abcdef", "copy uses all text when nothing is selected");
+    Check(OcrActions.Portion("abcdef", -1, 2) == "abcdef", "bad selection copies all");
+    Check(OcrActions.Portion("abcdef", 4, 5) == "abcdef", "selection past the end copies all");
+    Check(OcrActions.Portion(null, 0, 1) == "", "null text copies empty");
+    var url = OcrActions.BingSimplifiedChinese("你好 A", out bool truncated);
+    Check(!truncated, "short text is not truncated");
+    Check(url.StartsWith("https://www.bing.com/translator?", StringComparison.Ordinal), "translate opens bing translator");
+    Check(url.Contains("from=auto", StringComparison.Ordinal) && url.Contains("to=zh-Hans", StringComparison.Ordinal), "translate targets simplified chinese");
+    Check(url.Contains("text=" + Uri.EscapeDataString("你好 A"), StringComparison.Ordinal), "translate query is escaped");
+    var exact = new string('字', OcrActions.TranslateLimit);
+    var exactUrl = OcrActions.BingSimplifiedChinese(exact, out bool exactCut);
+    Check(!exactCut && exactUrl.Contains("text=" + Uri.EscapeDataString(exact), StringComparison.Ordinal), "translate keeps exactly 1000 characters");
+    var oneOver = OcrActions.BingSimplifiedChinese(exact + "多", out bool oneOverCut);
+    Check(oneOverCut && oneOver.Contains("text=" + Uri.EscapeDataString(exact), StringComparison.Ordinal), "translate drops the 1001st character");
+    var longText = new string('字', OcrActions.TranslateLimit + 10);
+    var longUrl = OcrActions.BingSimplifiedChinese(longText, out bool cut);
+    Check(cut, "long text is truncated for the translate url");
+    Check(longUrl.Contains("text=" + Uri.EscapeDataString(new string('字', OcrActions.TranslateLimit)), StringComparison.Ordinal), "translate url keeps the first 1000");
+    Check(!longUrl.Contains(Uri.EscapeDataString(new string('字', OcrActions.TranslateLimit + 1)), StringComparison.Ordinal), "translate url drops the rest");
 }
 finally
 {
