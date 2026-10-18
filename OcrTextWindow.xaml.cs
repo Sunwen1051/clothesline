@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 
 namespace Clothesline;
 
@@ -87,4 +89,17 @@ public partial class OcrTextWindow : Window
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
+
+    private void Header_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left) return;
+        try { DragMove(); }
+        catch (InvalidOperationException) { }
+    }
+
+    private void Sizer_Drag(object sender, DragDeltaEventArgs e)
+    {
+        Width = Math.Max(MinWidth, Width + e.HorizontalChange);
+        Height = Math.Max(MinHeight, Height + e.VerticalChange);
+    }
 }

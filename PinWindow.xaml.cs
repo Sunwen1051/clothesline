@@ -13,7 +13,9 @@ public partial class PinWindow : Window
 {
     private const int GwlExStyle = -20;
     private const int WsExTransparent = 0x00000020;
-    private const double ToolbarAndChrome = 52;
+    // 外圈留给阴影，内圈是玻璃描边和内边距。工具栏一行加状态行的空隙。
+    private const double HorizontalChrome = 14 * 2 + 10 * 2 + 2;
+    private const double ToolbarAndChrome = 14 * 2 + 10 * 2 + 2 + 36 + 8;
     private const double ClickThroughOpacity = 0.5;
 
     private readonly double _aspect;
@@ -89,7 +91,7 @@ public partial class PinWindow : Window
     {
         if (_locked || _clickThrough) return;
         double factor = e.Delta > 0 ? 1.1 : 1 / 1.1;
-        double imageWidth = Math.Max(80, Width - 18);
+        double imageWidth = Math.Max(80, Width - HorizontalChrome);
         ApplyImageWidth(imageWidth * factor);
         e.Handled = true;
     }
@@ -97,14 +99,14 @@ public partial class PinWindow : Window
     private void Sizer_Drag(object sender, DragDeltaEventArgs e)
     {
         if (_locked || _clickThrough) return;
-        double imageWidth = Math.Max(80, Width - 18);
+        double imageWidth = Math.Max(80, Width - HorizontalChrome);
         ApplyImageWidth(imageWidth + e.HorizontalChange);
     }
 
     private void ApplyImageWidth(double imageWidth)
     {
         imageWidth = Math.Clamp(imageWidth, 140, 1400);
-        Width = imageWidth + 18;
+        Width = imageWidth + HorizontalChrome;
         Height = imageWidth / _aspect + ToolbarAndChrome;
     }
 

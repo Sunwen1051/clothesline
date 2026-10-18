@@ -34,6 +34,8 @@ public partial class LineWindow : Window
     private readonly ObservableCollection<PegItem> _pegs = new();
     private readonly DispatcherTimer _hideTimer;
     private readonly DispatcherTimer _peekTimer;
+    private readonly DispatcherTimer _edgeTimer;
+    private readonly EdgeHold _edgeHold = new();
     private readonly Random _rng = new();
 
     private AppSettings _settings;
@@ -87,6 +89,12 @@ public partial class LineWindow : Window
         _hideTimer.Tick += (_, _) => { _hideTimer.Stop(); if (!_mouseInside) SlideTo(false); };
         _peekTimer = new DispatcherTimer { Interval = PeekHold };
         _peekTimer.Tick += (_, _) => { _peekTimer.Stop(); if (!_mouseInside) SlideTo(false); };
+        _edgeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(EdgeHold.Milliseconds) };
+        _edgeTimer.Tick += (_, _) =>
+        {
+            _edgeTimer.Stop();
+            if (_edgeHold.Due() && !_shown) Peek();
+        };
 
         MouseEnter += (_, _) => { _mouseInside = true; _hideTimer.Stop(); };
         MouseLeave += (_, _) => { _mouseInside = false; if (_shown) _hideTimer.Start(); };
@@ -235,7 +243,7 @@ public partial class LineWindow : Window
     }
 
     /// <summary>
-    /// 独立热区窗口：屏幕顶边 3px 高的透明条，鼠标碰上去唤出晾衣绳。
+    /// 独立热区窗口：屏幕顶边 3px 高的透明条。指针要在这里停约半秒才唤出晾衣绳，提前离开则取消。
     /// 主窗口隐藏时整个在屏幕外，得靠它把绳子拉回来。
     /// </summary>
     private void CreateHotZone()
@@ -258,12 +266,24 @@ public partial class LineWindow : Window
         };
         _hotZone.MouseEnter += (_, _) =>
         {
-            _mouseInside = true;
             _hideTimer.Stop();
             Logger.Log("hotzone hover");
-            if (!_shown) Peek();
+            if (_shown)
+            {
+                _mouseInside = true;
+                return;
+            }
+            // 只延迟「鼠标停在顶边」。热键和 Peek()（新截图）不经过这里。
+            _edgeHold.Enter();
+            _edgeTimer.Stop();
+            _edgeTimer.Start();
         };
-        _hotZone.MouseLeave += (_, _) => { _mouseInside = false; };
+        _hotZone.MouseLeave += (_, _) =>
+        {
+            _edgeHold.Leave();
+            _edgeTimer.Stop();
+            _mouseInside = false;
+        };
         _hotZone.Show();
         Logger.Log("hotzone ready");
     }
