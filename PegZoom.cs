@@ -14,7 +14,7 @@ internal static class PegZoom
     /// <summary>玻璃卡片上下留白：外边距 18+8，内边距 8+8。</summary>
     public const double CardExtra = 42;
 
-    /// <summary>绳子、阴影和横向滚动条占用的高度，不含中间下垂。</summary>
+    /// <summary>绳子和阴影占用的高度，不含中间下垂。横向滚动条不显示，这段高度只是留给卡片的余量。</summary>
     public const double WindowChrome = 56;
 
     public enum Gesture

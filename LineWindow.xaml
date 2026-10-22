@@ -16,6 +16,7 @@
     <!-- alpha=1 而不是全透明：分层窗口按像素 alpha 做鼠标命中，全透明会被系统穿透 -->
     <Grid x:Name="Root" Background="#01000000" MouseLeftButtonDown="Root_MouseDown">
         <!-- 注意：Root 不能挂 RenderTransform——会让 AllowsTransparency 分层窗口整块变白 -->
+        <Grid x:Name="RopeHost" VerticalAlignment="Top" IsHitTestVisible="False">
         <Path x:Name="RopeShadow" StrokeThickness="3.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
               VerticalAlignment="Top" Margin="0,2,0,0" IsHitTestVisible="False">
             <Path.Stroke>
@@ -52,8 +53,9 @@
                 </LinearGradientBrush>
             </Path.Stroke>
         </Path>
+        </Grid>
         <ScrollViewer x:Name="PegScroll"
-                      HorizontalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Hidden"
                       VerticalScrollBarVisibility="Disabled"
                       HorizontalContentAlignment="Right"
                       VerticalAlignment="Stretch"
@@ -76,6 +78,7 @@
                 <DataTemplate>
                     <Grid Margin="22,0,0,0" Background="Transparent" VerticalAlignment="Top"
                           RenderTransformOrigin="0.5,0" RenderTransform="{Binding Xf}"
+                          Loaded="Peg_Loaded"
                           MouseEnter="Peg_MouseEnter" MouseLeave="Peg_MouseLeave">
                         <Border Margin="0,18,0,8" CornerRadius="16" Padding="8" BorderThickness="1">
                             <Border.Style>

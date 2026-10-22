@@ -246,6 +246,30 @@ try
     edge.Enter();
     Check(edge.Pending && edge.Due() && !edge.Pending, "a second enter still waits for one hold");
 
+    var fullHd125 = WorkAreaSpan.ToDip(0, 0, 1920, 1080, 1.25, 1.25);
+    Check(Math.Abs(fullHd125.Width - 1536) < 1e-6 && Math.Abs(fullHd125.Height - 864) < 1e-6, "125 percent scale keeps the full work area in dips");
+    Check(fullHd125.Left == 0 && fullHd125.Top == 0, "primary work area starts at the origin");
+    var second = WorkAreaSpan.ToDip(1920, 0, 3840, 1080, 1, 1);
+    Check(second.Left == 1920 && second.Width == 1920, "a monitor that does not start at zero keeps its origin");
+    var badScale = WorkAreaSpan.ToDip(10, 20, 11, 21, 0, double.NaN);
+    Check(badScale.Width == 1 && badScale.Height == 1 && badScale.Left == 10 && badScale.Top == 20, "bad dpi scale falls back to one pixel per dip");
+
+    Check(SwingTiming.DelayMs(0, 1) == 0, "one peg starts swinging with the slide");
+    Check(SwingTiming.DelayMs(-3, 4) == SwingTiming.DelayMs(0, 4), "a negative peg index starts with the first");
+    int previous = -1;
+    bool ordered = true;
+    bool duringSlide = true;
+    for (int i = 0; i < 12; i++)
+    {
+        int delay = SwingTiming.DelayMs(i, 12);
+        if (delay < previous) ordered = false;
+        if (delay < 0 || delay >= SwingTiming.SlideDownMs) duringSlide = false;
+        previous = delay;
+    }
+    Check(ordered, "swing delays follow the peg order");
+    Check(duringSlide, "every peg starts swinging before the line finishes dropping");
+    Check(SwingTiming.DelayMs(11, 12) == SwingTiming.SlideDownMs - 80, "the last peg still leads the landing");
+
     Check(OcrActions.Portion("abcdef", 2, 3) == "cde", "copy uses the selection");
     Check(OcrActions.Portion("abcdef", 0, 0) == "abcdef", "copy uses all text when nothing is selected");
     Check(OcrActions.Portion("abcdef", -1, 2) == "abcdef", "bad selection copies all");
