@@ -21,6 +21,7 @@ public partial class LineWindow : Window
     private const int WM_CLIPBOARDUPDATE = 0x031D;
     private const int WM_HOTKEY = 0x0312;
     private const int WM_TRAYICON = 0x8000 + 2; // WM_APP + 2
+    private const int WM_DISPLAYCHANGE = 0x007E;
 
     private const int WM_LBUTTONDBLCLK = 0x0203;
     private const int WM_RBUTTONUP = 0x0205;
@@ -36,6 +37,7 @@ public partial class LineWindow : Window
     private readonly DispatcherTimer _peekTimer;
     private readonly DispatcherTimer _edgeTimer;
     private readonly EdgeHold _edgeHold = new();
+    private readonly MenuHold _menuHold = new();
     private readonly Random _rng = new();
 
     private AppSettings _settings;
@@ -57,6 +59,13 @@ public partial class LineWindow : Window
     private bool _pegStoreBroken;
     private bool _demo;
     private bool _hanging;
+    private bool _hangQueued;
+    private bool _fitting;
+    private bool _physicalWidthOk;
+    private int _physicalFixes;
+    private int _menuHoldGeneration;
+    private double _anchorTop;
+    private double _dipScaleX = 1;
     private double _ropeDrawnWidth = -1;
     private bool _hotkeyFellBack;
     private string _hotkeyLabel = "不可用";
@@ -80,15 +89,15 @@ public partial class LineWindow : Window
         ApplyRope(Width);
         Pegs.ItemsSource = _pegs;
         _pegs.CollectionChanged += Pegs_CollectionChanged;
-        SizeChanged += (_, _) => HangPegs();
-        Loaded += (_, _) => HangPegs();
-        Root.LayoutUpdated += (_, _) => HangPegs();
-        PegScroll.ScrollChanged += (_, _) => HangPegs();
+        SizeChanged += (_, _) => OnWindowSizeChanged();
+        Loaded += (_, _) => ScheduleHang();
+        PegScroll.ScrollChanged += (_, _) => ScheduleHang();
+        DpiChanged += (_, _) => FitToAnchorScreen();
 
         _hideTimer = new DispatcherTimer { Interval = HideDelay };
-        _hideTimer.Tick += (_, _) => { _hideTimer.Stop(); if (!_mouseInside) SlideTo(false); };
+        _hideTimer.Tick += (_, _) => { _hideTimer.Stop(); if (_menuHold.AllowHide(_mouseInside)) SlideTo(false); };
         _peekTimer = new DispatcherTimer { Interval = PeekHold };
-        _peekTimer.Tick += (_, _) => { _peekTimer.Stop(); if (!_mouseInside) SlideTo(false); };
+        _peekTimer.Tick += (_, _) => { _peekTimer.Stop(); if (_menuHold.AllowHide(_mouseInside)) SlideTo(false); };
         _edgeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(EdgeHold.Milliseconds) };
         _edgeTimer.Tick += (_, _) =>
         {
@@ -97,7 +106,7 @@ public partial class LineWindow : Window
         };
 
         MouseEnter += (_, _) => { _mouseInside = true; _hideTimer.Stop(); };
-        MouseLeave += (_, _) => { _mouseInside = false; if (_shown) _hideTimer.Start(); };
+        MouseLeave += (_, _) => NotePointerLeft();
         SourceInitialized += (_, _) => OnHwndReady();
     }
 
@@ -167,7 +176,108 @@ public partial class LineWindow : Window
         }
     }
 
-    private double HiddenTop => -Height;
+    /// <summary>挂点只在布局或滚动之后算一次。LayoutUpdated 每次布局都进，动画时会把界面拖卡。</summary>
+    private void ScheduleHang()
+    {
+        if (_hangQueued) return;
+        _hangQueued = true;
+        Dispatcher.BeginInvoke(() =>
+        {
+            _hangQueued = false;
+            HangPegs();
+        }, DispatcherPriority.Loaded);
+    }
+
+    private void OnWindowSizeChanged()
+    {
+        ScheduleHang();
+        if (!_physicalWidthOk)
+            Dispatcher.BeginInvoke(EnsurePhysicalWidths, DispatcherPriority.Background);
+    }
+
+    /// <summary>
+    /// 按窗口所在屏幕的工作区铺满顶边。SystemParameters 的宽度在分层窗口上会少一截
+    /// （常见是把 DIP 当成物理像素，125% 缩放时大约只剩 4/5，看起来像 3/4）。
+    /// </summary>
+    private void FitToAnchorScreen()
+    {
+        if (_fitting) return;
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (!MonitorSpan.TryMeasure(hwnd, out var px)) return;
+        var dip = WorkAreaSpan.ToDip(px.Left, px.Top, px.Right, px.Bottom, px.Scale, px.Scale);
+        _fitting = true;
+        try
+        {
+            _anchorTop = dip.Top;
+            _dipScaleX = px.Scale;
+            Left = dip.Left;
+            Width = dip.Width;
+            if (_hotZone != null)
+            {
+                _hotZone.Left = dip.Left;
+                _hotZone.Width = dip.Width;
+                _hotZone.Top = dip.Top;
+            }
+            CacheElement(RopeHost);
+            RefreshPegCaches();
+            if (!_shown)
+            {
+                BeginAnimation(TopProperty, null);
+                Top = HiddenTop;
+            }
+            _physicalWidthOk = false;
+            _physicalFixes = 0;
+            Logger.Log($"span work px={px.Width} dip={dip.Width:0.#} scale={px.Scale:0.##} left={dip.Left:0.#}");
+        }
+        finally
+        {
+            _fitting = false;
+        }
+        Dispatcher.BeginInvoke(EnsurePhysicalWidths, DispatcherPriority.Loaded);
+    }
+
+    private void EnsurePhysicalWidths()
+    {
+        if (_physicalWidthOk || _physicalFixes >= 4) return;
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (!MonitorSpan.TryMeasure(hwnd, out var px)) return;
+        bool lineOk = MonitorSpan.AlignWidth(hwnd, px.Left, px.Width);
+        bool hotOk = true;
+        if (_hotZone != null)
+        {
+            var hot = new WindowInteropHelper(_hotZone).Handle;
+            hotOk = MonitorSpan.AlignWidth(hot, px.Left, px.Width);
+        }
+        if (!lineOk || !hotOk) _physicalFixes++;
+        if (lineOk && hotOk) _physicalWidthOk = true;
+        else Logger.Log("span hwnd width corrected to work area " + px.Width);
+    }
+
+    private void CacheElement(FrameworkElement? fe)
+    {
+        if (fe == null) return;
+        double scale = _dipScaleX >= 1 ? _dipScaleX : 1;
+        if (fe.CacheMode is BitmapCache cache && Math.Abs(cache.RenderAtScale - scale) < 0.01) return;
+        fe.CacheMode = new BitmapCache(scale);
+    }
+
+    private void RefreshPegCaches()
+    {
+        for (int i = 0; i < _pegs.Count; i++)
+        {
+            if (Pegs.ItemContainerGenerator.ContainerFromIndex(i) is not FrameworkElement container) continue;
+            if (VisualTreeHelper.GetChildrenCount(container) > 0 &&
+                VisualTreeHelper.GetChild(container, 0) is FrameworkElement child)
+                CacheElement(child);
+        }
+    }
+
+    private void Peg_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe) CacheElement(fe);
+    }
+
+    private double HiddenTop => _anchorTop - Height;
 
     internal void PrepareDemo()
     {
@@ -230,6 +340,7 @@ public partial class LineWindow : Window
         // ShowInTaskbar=False + ShowActivated=False 承担。
 
         _tray = new TrayIcon(hwnd, WM_TRAYICON, "Clothesline — 截图晾衣绳");
+        FitToAnchorScreen();
         SyncClipboardListener();
         ReregisterHotkey();
 
@@ -258,9 +369,9 @@ public partial class LineWindow : Window
             ShowActivated = false,
             Focusable = false,
             ResizeMode = ResizeMode.NoResize,
-            Left = 0,
-            Top = 0,
-            Width = SystemParameters.PrimaryScreenWidth,
+            Left = Left,
+            Top = _anchorTop,
+            Width = Width,
             Height = 3,
             Content = HitTestBrush(),
         };
@@ -285,6 +396,7 @@ public partial class LineWindow : Window
             _mouseInside = false;
         };
         _hotZone.Show();
+        FitToAnchorScreen();
         Logger.Log("hotzone ready");
     }
 
@@ -308,6 +420,9 @@ public partial class LineWindow : Window
             case WM_HOTKEY:
                 ToggleShow();
                 handled = true;
+                break;
+            case WM_DISPLAYCHANGE:
+                Dispatcher.BeginInvoke(FitToAnchorScreen);
                 break;
             case WM_TRAYICON:
                 int m = unchecked((int)lParam.ToInt64());
@@ -450,6 +565,7 @@ public partial class LineWindow : Window
     {
         RememberPegs();
         FitLineHeight();
+        ScheduleHang();
     }
 
     private void RememberPegs()
@@ -573,7 +689,9 @@ public partial class LineWindow : Window
     private void SlideTo(bool show, bool instant = false)
     {
         _shown = show;
-        double target = show ? 0 : HiddenTop;
+        double target = show ? _anchorTop : HiddenTop;
+        // 先开晃，再开下落。延迟全部落在下落结束之前，照片是边下来边晃。
+        if (show) SwingAll();
         if (instant)
         {
             BeginAnimation(Window.TopProperty, null);
@@ -581,7 +699,8 @@ public partial class LineWindow : Window
         }
         else
         {
-            var anim = new DoubleAnimation(target, TimeSpan.FromMilliseconds(show ? 300 : 230))
+            int ms = show ? SwingTiming.SlideDownMs : SwingTiming.SlideUpMs;
+            var anim = new DoubleAnimation(target, TimeSpan.FromMilliseconds(ms))
             {
                 EasingFunction = new CubicEase { EasingMode = show ? EasingMode.EaseOut : EasingMode.EaseIn },
             };
@@ -589,24 +708,20 @@ public partial class LineWindow : Window
         }
         // 绳子显示期间热区让位（不然顶边 3px 两窗争鼠标会来回闪）
         if (_hotZone != null) _hotZone.Visibility = show ? Visibility.Hidden : Visibility.Visible;
-        if (show) SwingAll();
         Logger.Log(show ? "slide down" : "slide up");
     }
 
     private void SwingAll()
     {
-        int i = 0;
-        foreach (var item in _pegs)
-        {
-            SwingOne(item, 120 + i * 45);
-            i++;
-        }
+        int n = _pegs.Count;
+        for (int i = 0; i < n; i++)
+            SwingOne(_pegs[i], SwingTiming.DelayMs(i, n));
     }
 
     private void SwingOne(PegItem item, int delayMs = 0)
     {
         double a = item.Angle;
-        var anim = new DoubleAnimation(a - 13, a, TimeSpan.FromMilliseconds(950))
+        var anim = new DoubleAnimation(a - 13, a, TimeSpan.FromMilliseconds(SwingTiming.SwingMs))
         {
             EasingFunction = new ElasticEase { EasingMode = EasingMode.EaseOut, Oscillations = 3, Springiness = 5 },
             BeginTime = TimeSpan.FromMilliseconds(delayMs),
@@ -631,7 +746,11 @@ public partial class LineWindow : Window
         {
             double before = peg!.Zoom;
             peg.Zoom = PegZoom.Next(before, e.Delta);
-            if (Math.Abs(peg.Zoom - before) > 1e-9) FitLineHeight();
+            if (Math.Abs(peg.Zoom - before) > 1e-9)
+            {
+                FitLineHeight();
+                ScheduleHang();
+            }
             return;
         }
 
@@ -776,9 +895,75 @@ public partial class LineWindow : Window
             menu.Items.Add(new Separator());
             menu.Items.Add(remove);
             menu.Items.Add(delete);
+            // 必须先占住，再打开。IsOpen 会同步让窗口收到 MouseLeave。
+            HoldLineForMenu(menu);
             menu.IsOpen = true;
             e.Handled = true;
         }
+    }
+
+    /// <summary>
+    /// 照片菜单打开期间不收回。弹层抢走鼠标后，窗口的 MouseLeave 是假离开。
+    /// 关掉再看指针还在不在绳子上，离开才走原来的 350ms 收回。
+    /// </summary>
+    private void HoldLineForMenu(ContextMenu menu)
+    {
+        int generation = ++_menuHoldGeneration;
+        _menuHold.Opened();
+        _hideTimer.Stop();
+        menu.Closed += (_, _) =>
+            Dispatcher.BeginInvoke(() => ReleaseMenuHold(generation), DispatcherPriority.Background);
+    }
+
+    private void ReleaseMenuHold(int generation) => SettleMenuHold(generation, retried: false);
+
+    private void SettleMenuHold(int generation, bool retried)
+    {
+        if (generation != _menuHoldGeneration) return;
+        bool inside = PointerOverLine();
+        // 弹层 HWND 可能还没拆掉。光标仍落在绳子矩形里时再等一轮输入，避免误收。
+        if (!inside && !retried && CursorInsideWindow())
+        {
+            Dispatcher.BeginInvoke(() => SettleMenuHold(generation, retried: true), DispatcherPriority.ApplicationIdle);
+            return;
+        }
+        _mouseInside = inside;
+        if (_menuHold.Closed(inside))
+        {
+            if (_shown) _hideTimer.Start();
+        }
+        else
+        {
+            _hideTimer.Stop();
+        }
+    }
+
+    private void NotePointerLeft()
+    {
+        _mouseInside = false;
+        if (_shown && _menuHold.AllowHide(false))
+            _hideTimer.Start();
+        else
+            _hideTimer.Stop();
+    }
+
+    /// <summary>菜单关掉后看光标下的窗口。IsMouseOver 在弹层拆掉前会一直是假的。</summary>
+    private bool PointerOverLine()
+    {
+        if (IsMouseOver) return true;
+        IntPtr hwnd = _src?.Handle ?? IntPtr.Zero;
+        if (hwnd == IntPtr.Zero || !GetCursorPos(out CursorPoint pt)) return false;
+        IntPtr under = WindowFromPoint(pt);
+        if (under == IntPtr.Zero) return false;
+        return under == hwnd || GetAncestor(under, GaRoot) == hwnd;
+    }
+
+    private bool CursorInsideWindow()
+    {
+        IntPtr hwnd = _src?.Handle ?? IntPtr.Zero;
+        if (hwnd == IntPtr.Zero || !GetCursorPos(out CursorPoint pt) || !GetWindowRect(hwnd, out CursorRect rect))
+            return false;
+        return pt.X >= rect.Left && pt.X < rect.Right && pt.Y >= rect.Top && pt.Y < rect.Bottom;
     }
 
     /// <summary>取下夹子。deleteFile 为真时把文件移进回收站；删除失败则夹子留在绳子上。</summary>
@@ -1210,9 +1395,28 @@ public partial class LineWindow : Window
 
     // ---------- Win32 ----------
 
+    private const uint GaRoot = 2;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CursorPoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CursorRect
+    {
+        public int Left, Top, Right, Bottom;
+    }
+
     [DllImport("user32.dll")] private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
     [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
     [DllImport("user32.dll")] private static extern bool AddClipboardFormatListener(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern bool RemoveClipboardFormatListener(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out CursorPoint point);
+    [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(CursorPoint point);
+    [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd, out CursorRect rect);
 }

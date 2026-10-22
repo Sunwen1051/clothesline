@@ -20,15 +20,15 @@ Inspired by [tendedero](https://github.com/alejandrobujan/tendedero) (macOS, Swi
 | Hold the pointer on the very top edge for about half a second | The line slides down. Moving away sooner cancels it. The hotkey and a new screenshot still show the line immediately |
 | Move the mouse away (or click empty rope) | The line retracts |
 | Hotkey (default `Ctrl+Alt+T`) | Toggle the line. On conflict, try `Ctrl+Alt+L` then `Ctrl+Alt+T` (skip chords already tried) and show a tray balloon |
-| A new screenshot arrives | The line peeks down for a moment |
+| A new screenshot arrives | The line peeks down for a moment. Photos start swinging while the line is still coming down |
 | Click a photo | Copy the full-resolution original to the clipboard. A small capsule says 已复制 |
 | Double-click | Open in the default image viewer |
 | Drag onto an Explorer folder or the desktop | Unpin. The file stays (Explorer copies or moves it) |
 | Drag onto the Recycle Bin | Move the file to the Recycle Bin and unpin |
 | Drag into a chat / editor | Drop the file; the peg stays on the line |
-| Right-click a photo | Open / reveal in folder / pin / OCR / take down / take down and delete |
+| Right-click a photo | Open / reveal in folder / pin / OCR / take down / take down and delete. The line stays down while this menu is open, and retracts afterward only if the pointer has already left |
 | Wheel over a photo | Zoom that thumbnail from half to twice the default 184×216 |
-| Wheel over empty rope | Scroll horizontally when pegs overflow. This does not zoom |
+| Wheel over empty rope | Scroll horizontally when pegs overflow. No scrollbar is shown, and this does not zoom |
 | Tray icon | Double-click toggles; right-click for the menu (hotkey, clipboard switch, settings, history, open pins, folders, exit) |
 
 The UI is in Chinese. If a drop target is not recognized, the peg stays; use **取下** (take down) or **取下并删除文件** (take down and delete). Delete sends the file to the Recycle Bin.
@@ -61,7 +61,7 @@ Pen, arrow, and mosaic annotation are not in this version.
 
 ## Known limitations
 
-- Primary screen only; screenshots taken anywhere hang on the primary screen's line.
+- Primary screen only; screenshots taken anywhere hang on the primary screen's line. The rope uses that screen's work-area width, so a side taskbar is not covered and the top edge of the work area is.
 - While a fullscreen game or presentation is in the foreground, new captures don't auto-peek (they are still pegged; use the hotkey or the top edge).
 - The top hotzone is 3 px tall and waits about half a second. It can be blocked by other always-on-top windows covering the screen edge (use the hotkey then). The hotkey and a new screenshot do not wait.
 - Folder and Recycle Bin drops are recognized for Explorer. Other file managers may not report a target; use the context menu then.
