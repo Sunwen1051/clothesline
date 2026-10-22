@@ -246,6 +246,19 @@ try
     edge.Enter();
     Check(edge.Pending && edge.Due() && !edge.Pending, "a second enter still waits for one hold");
 
+    var menuHold = new MenuHold();
+    Check(menuHold.AllowHide(false), "pointer outside hides when no photo menu is open");
+    Check(!menuHold.AllowHide(true), "pointer inside keeps the line when no photo menu is open");
+    menuHold.Opened();
+    Check(menuHold.Open, "opening the photo menu holds the line");
+    Check(!menuHold.AllowHide(false), "an open photo menu blocks hide when the pointer looks outside");
+    Check(!menuHold.AllowHide(true), "an open photo menu blocks hide when the pointer stays inside");
+    Check(!menuHold.Closed(true), "closing the menu over the rope does not arm hide");
+    Check(!menuHold.Open && menuHold.AllowHide(false), "after the menu closes, a later leave can hide");
+    menuHold.Opened();
+    Check(menuHold.Closed(false), "closing the menu after the pointer left arms hide");
+    Check(!menuHold.Open && !menuHold.AllowHide(true), "a closed menu still keeps the line while the pointer is inside");
+
     var fullHd125 = WorkAreaSpan.ToDip(0, 0, 1920, 1080, 1.25, 1.25);
     Check(Math.Abs(fullHd125.Width - 1536) < 1e-6 && Math.Abs(fullHd125.Height - 864) < 1e-6, "125 percent scale keeps the full work area in dips");
     Check(fullHd125.Left == 0 && fullHd125.Top == 0, "primary work area starts at the origin");

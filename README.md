@@ -26,7 +26,7 @@ Inspired by [tendedero](https://github.com/alejandrobujan/tendedero) (macOS, Swi
 | Drag onto an Explorer folder or the desktop | Unpin. The file stays (Explorer copies or moves it) |
 | Drag onto the Recycle Bin | Move the file to the Recycle Bin and unpin |
 | Drag into a chat / editor | Drop the file; the peg stays on the line |
-| Right-click a photo | Open / reveal in folder / pin / OCR / take down / take down and delete |
+| Right-click a photo | Open / reveal in folder / pin / OCR / take down / take down and delete. The line stays down while this menu is open, and retracts afterward only if the pointer has already left |
 | Wheel over a photo | Zoom that thumbnail from half to twice the default 184×216 |
 | Wheel over empty rope | Scroll horizontally when pegs overflow. No scrollbar is shown, and this does not zoom |
 | Tray icon | Double-click toggles; right-click for the menu (hotkey, clipboard switch, settings, history, open pins, folders, exit) |

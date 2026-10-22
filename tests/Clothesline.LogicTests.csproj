@@ -17,6 +17,7 @@
     <Compile Include="..\PegZoom.cs" Link="PegZoom.cs" />
     <Compile Include="..\RopeCurve.cs" Link="RopeCurve.cs" />
     <Compile Include="..\EdgeHold.cs" Link="EdgeHold.cs" />
+    <Compile Include="..\MenuHold.cs" Link="MenuHold.cs" />
     <Compile Include="..\WorkAreaSpan.cs" Link="WorkAreaSpan.cs" />
     <Compile Include="..\SwingTiming.cs" Link="SwingTiming.cs" />
     <Compile Include="..\OcrActions.cs" Link="OcrActions.cs" />

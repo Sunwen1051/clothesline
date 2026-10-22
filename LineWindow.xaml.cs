@@ -37,6 +37,7 @@ public partial class LineWindow : Window
     private readonly DispatcherTimer _peekTimer;
     private readonly DispatcherTimer _edgeTimer;
     private readonly EdgeHold _edgeHold = new();
+    private readonly MenuHold _menuHold = new();
     private readonly Random _rng = new();
 
     private AppSettings _settings;
@@ -62,6 +63,7 @@ public partial class LineWindow : Window
     private bool _fitting;
     private bool _physicalWidthOk;
     private int _physicalFixes;
+    private int _menuHoldGeneration;
     private double _anchorTop;
     private double _dipScaleX = 1;
     private double _ropeDrawnWidth = -1;
@@ -93,9 +95,9 @@ public partial class LineWindow : Window
         DpiChanged += (_, _) => FitToAnchorScreen();
 
         _hideTimer = new DispatcherTimer { Interval = HideDelay };
-        _hideTimer.Tick += (_, _) => { _hideTimer.Stop(); if (!_mouseInside) SlideTo(false); };
+        _hideTimer.Tick += (_, _) => { _hideTimer.Stop(); if (_menuHold.AllowHide(_mouseInside)) SlideTo(false); };
         _peekTimer = new DispatcherTimer { Interval = PeekHold };
-        _peekTimer.Tick += (_, _) => { _peekTimer.Stop(); if (!_mouseInside) SlideTo(false); };
+        _peekTimer.Tick += (_, _) => { _peekTimer.Stop(); if (_menuHold.AllowHide(_mouseInside)) SlideTo(false); };
         _edgeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(EdgeHold.Milliseconds) };
         _edgeTimer.Tick += (_, _) =>
         {
@@ -104,7 +106,7 @@ public partial class LineWindow : Window
         };
 
         MouseEnter += (_, _) => { _mouseInside = true; _hideTimer.Stop(); };
-        MouseLeave += (_, _) => { _mouseInside = false; if (_shown) _hideTimer.Start(); };
+        MouseLeave += (_, _) => NotePointerLeft();
         SourceInitialized += (_, _) => OnHwndReady();
     }
 
@@ -893,9 +895,75 @@ public partial class LineWindow : Window
             menu.Items.Add(new Separator());
             menu.Items.Add(remove);
             menu.Items.Add(delete);
+            // 必须先占住，再打开。IsOpen 会同步让窗口收到 MouseLeave。
+            HoldLineForMenu(menu);
             menu.IsOpen = true;
             e.Handled = true;
         }
+    }
+
+    /// <summary>
+    /// 照片菜单打开期间不收回。弹层抢走鼠标后，窗口的 MouseLeave 是假离开。
+    /// 关掉再看指针还在不在绳子上，离开才走原来的 350ms 收回。
+    /// </summary>
+    private void HoldLineForMenu(ContextMenu menu)
+    {
+        int generation = ++_menuHoldGeneration;
+        _menuHold.Opened();
+        _hideTimer.Stop();
+        menu.Closed += (_, _) =>
+            Dispatcher.BeginInvoke(() => ReleaseMenuHold(generation), DispatcherPriority.Background);
+    }
+
+    private void ReleaseMenuHold(int generation) => SettleMenuHold(generation, retried: false);
+
+    private void SettleMenuHold(int generation, bool retried)
+    {
+        if (generation != _menuHoldGeneration) return;
+        bool inside = PointerOverLine();
+        // 弹层 HWND 可能还没拆掉。光标仍落在绳子矩形里时再等一轮输入，避免误收。
+        if (!inside && !retried && CursorInsideWindow())
+        {
+            Dispatcher.BeginInvoke(() => SettleMenuHold(generation, retried: true), DispatcherPriority.ApplicationIdle);
+            return;
+        }
+        _mouseInside = inside;
+        if (_menuHold.Closed(inside))
+        {
+            if (_shown) _hideTimer.Start();
+        }
+        else
+        {
+            _hideTimer.Stop();
+        }
+    }
+
+    private void NotePointerLeft()
+    {
+        _mouseInside = false;
+        if (_shown && _menuHold.AllowHide(false))
+            _hideTimer.Start();
+        else
+            _hideTimer.Stop();
+    }
+
+    /// <summary>菜单关掉后看光标下的窗口。IsMouseOver 在弹层拆掉前会一直是假的。</summary>
+    private bool PointerOverLine()
+    {
+        if (IsMouseOver) return true;
+        IntPtr hwnd = _src?.Handle ?? IntPtr.Zero;
+        if (hwnd == IntPtr.Zero || !GetCursorPos(out CursorPoint pt)) return false;
+        IntPtr under = WindowFromPoint(pt);
+        if (under == IntPtr.Zero) return false;
+        return under == hwnd || GetAncestor(under, GaRoot) == hwnd;
+    }
+
+    private bool CursorInsideWindow()
+    {
+        IntPtr hwnd = _src?.Handle ?? IntPtr.Zero;
+        if (hwnd == IntPtr.Zero || !GetCursorPos(out CursorPoint pt) || !GetWindowRect(hwnd, out CursorRect rect))
+            return false;
+        return pt.X >= rect.Left && pt.X < rect.Right && pt.Y >= rect.Top && pt.Y < rect.Bottom;
     }
 
     /// <summary>取下夹子。deleteFile 为真时把文件移进回收站；删除失败则夹子留在绳子上。</summary>
@@ -1327,9 +1395,28 @@ public partial class LineWindow : Window
 
     // ---------- Win32 ----------
 
+    private const uint GaRoot = 2;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CursorPoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CursorRect
+    {
+        public int Left, Top, Right, Bottom;
+    }
+
     [DllImport("user32.dll")] private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
     [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
     [DllImport("user32.dll")] private static extern bool AddClipboardFormatListener(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern bool RemoveClipboardFormatListener(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out CursorPoint point);
+    [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(CursorPoint point);
+    [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd, out CursorRect rect);
 }
